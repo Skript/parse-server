@@ -25,6 +25,9 @@ export class ClassesRouter extends PromiseRouter {
     if (typeof body.where === 'string') {
       body.where = JSON.parse(body.where);
     }
+    if (this.className(req) === "Story" && !body.where.lang) {
+        body.where.lang = "ru";
+    }
     return rest.find(req.config, req.auth, this.className(req), body.where, options, req.info.clientSDK)
       .then((response) => {
         if (response && response.results) {
