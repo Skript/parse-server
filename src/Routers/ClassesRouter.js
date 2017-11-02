@@ -25,7 +25,7 @@ export class ClassesRouter extends PromiseRouter {
     if (typeof body.where === 'string') {
       body.where = JSON.parse(body.where);
     }
-    if (this.className(req) === "Story") {
+    if (this.className(req) === "Story" || this.className(req) === "Category") {
       if (body.where) {
         if (!body.where.lang) {
           body.where.lang = "ru";
