@@ -27,7 +27,7 @@ export class ClassesRouter extends PromiseRouter {
     }
     if (this.className(req) === "Story" || this.className(req) === "Category") {
       if (body.where) {
-        if (!body.where.lang) {
+        if (!body.where.lang && !body.where.objectId && !body.where.textId) {
           body.where.lang = "ru";
         }
       } else {
