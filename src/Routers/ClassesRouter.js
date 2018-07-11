@@ -38,8 +38,7 @@ export class ClassesRouter extends PromiseRouter {
       let now = new Date();
       let cond = {publishedAt: {'$lt': now}};
       if (body.where) {
-        if (!body.where.publishedAt && !body.where.objectId && !body.where.textId &&
-           !body.where.app_version) {
+        if (!body.where.publishedAt && !body.where.objectId && !body.where.app_version) {
           Object.assign(body.where, cond);
         }
         if (body.where.app_version) {
