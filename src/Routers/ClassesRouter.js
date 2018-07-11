@@ -34,6 +34,21 @@ export class ClassesRouter extends PromiseRouter {
         body.where = {lang: "ru"};
       }
     }
+    if (this.className(req) === "Episode") {
+      let now = new Date();
+      let cond = {publishedAt: {'$lt': now}};
+      if (body.where) {
+        if (!body.where.publishedAt && !body.where.objectId && !body.where.textId &&
+           !body.where.app_version) {
+          Object.assign(body.where, cond);
+        }
+        if (body.where.app_version) {
+          delete body.where.app_version;
+        }
+      } else {
+        body.where = cond;
+      }
+    }
     return rest.find(req.config, req.auth, this.className(req), body.where, options, req.info.clientSDK)
       .then((response) => {
         if (response && response.results) {
