@@ -25,27 +25,38 @@ export class ClassesRouter extends PromiseRouter {
     if (typeof body.where === 'string') {
       body.where = JSON.parse(body.where);
     }
-    if (this.className(req) === "Story" || this.className(req) === "Category") {
-      if (body.where) {
-        if (!body.where.lang && !body.where.objectId && !body.where.textId) {
+    if (!body.where) {
+      body.where = {};
+    }
+    if (this.className(req) === "Category") {
+      if (!body.where.lang) {
+        body.where.lang = "ru";
+      }
+    }
+    if (this.className(req) === "Story") {
+      if (!body.where.objectId && !body.where.textId) {
+        let now = new Date();
+        if (!body.where.lang) {
           body.where.lang = "ru";
         }
-      } else {
-        body.where = {lang: "ru"};
+        if (!body.where.releasedAt) {
+          body.where.releasedAt = {'$lt': now};
+        }
       }
     }
     if (this.className(req) === "Episode") {
-      let now = new Date();
-      let cond = {publishedAt: {'$lt': now}};
-      if (body.where) {
-        if (!body.where.publishedAt && !body.where.objectId && !body.where.app_version) {
-          Object.assign(body.where, cond);
+      if (!body.where.objectId) {
+        let now = new Date();
+        if (!body.where.releasedAt) {
+          body.where.releasedAt = {'$lt': now};
         }
         if (body.where.app_version) {
           delete body.where.app_version;
+        } else {
+          if (!body.where.publishedAt) {
+            body.where.publishedAt = {'$lt': now};
+          }
         }
-      } else {
-        body.where = cond;
       }
     }
     return rest.find(req.config, req.auth, this.className(req), body.where, options, req.info.clientSDK)
