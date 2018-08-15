@@ -15,6 +15,7 @@ export class ClassesRouter extends PromiseRouter {
   handleFind(req) {
     const body = Object.assign(req.body, ClassesRouter.JSONFromQuery(req.query));
     const options = ClassesRouter.optionsFromBody(body);
+    const isMaster = req.auth && req.auth.isMaster;
     if (req.config.maxLimit && (body.limit > req.config.maxLimit)) {
       // Silently replace the limit on the query with the max configured
       options.limit = Number(req.config.maxLimit);
@@ -29,12 +30,12 @@ export class ClassesRouter extends PromiseRouter {
       body.where = {};
     }
     if (this.className(req) === "Category") {
-      if (!body._MasterKey && !body.where.lang) {
+      if (!isMaster && !body.where.lang) {
         body.where.lang = "ru";
       }
     }
     if (this.className(req) === "Story") {
-      if (!body._MasterKey && !body.where.objectId && !body.where.textId) {
+      if (!isMaster && !body.where.objectId && !body.where.textId) {
         let now = new Date();
         if (!body.where.lang) {
           body.where.lang = "ru";
@@ -45,7 +46,7 @@ export class ClassesRouter extends PromiseRouter {
       }
     }
     if (this.className(req) === "Episode") {
-      if (!body._MasterKey && !body.where.objectId) {
+      if (!isMaster && !body.where.objectId) {
         let now = new Date();
         if (!body.where.releasedAt) {
           body.where.releasedAt = {'$lt': now};
