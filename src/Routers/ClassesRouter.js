@@ -29,12 +29,12 @@ export class ClassesRouter extends PromiseRouter {
       body.where = {};
     }
     if (this.className(req) === "Category") {
-      if (!body.where.lang) {
+      if (!body._MasterKey && !body.where.lang) {
         body.where.lang = "ru";
       }
     }
     if (this.className(req) === "Story") {
-      if (!body.where.objectId && !body.where.textId) {
+      if (!body._MasterKey && !body.where.objectId && !body.where.textId) {
         let now = new Date();
         if (!body.where.lang) {
           body.where.lang = "ru";
@@ -45,7 +45,7 @@ export class ClassesRouter extends PromiseRouter {
       }
     }
     if (this.className(req) === "Episode") {
-      if (!body.where.objectId) {
+      if (!body._MasterKey && !body.where.objectId) {
         let now = new Date();
         if (!body.where.releasedAt) {
           body.where.releasedAt = {'$lt': now};
