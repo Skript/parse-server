@@ -1,22 +1,46 @@
-![Parse Server logo](.github/parse-server-logo.png?raw=true)
+![Parse Server logo](https://github.com/parse-community/parse-server/raw/master/.github/parse-server-logo.png)
 
 [![Backers on Open Collective](https://opencollective.com/parse-server/backers/badge.svg)](#backers) [![Sponsors on Open Collective](https://opencollective.com/parse-server/sponsors/badge.svg)](#sponsors)
 [![Build Status](https://img.shields.io/travis/parse-community/parse-server/master.svg?style=flat)](https://travis-ci.org/parse-community/parse-server)
 [![Coverage Status](https://img.shields.io/codecov/c/github/parse-community/parse-server/master.svg)](https://codecov.io/github/parse-community/parse-server?branch=master)
 [![npm version](https://img.shields.io/npm/v/parse-server.svg?style=flat)](https://www.npmjs.com/package/parse-server)
-
 [![Join Chat](https://img.shields.io/badge/gitter-join%20chat%20%E2%86%92-brightgreen.svg)](https://gitter.im/ParsePlatform/Chat)
+[![Greenkeeper badge](https://badges.greenkeeper.io/parse-community/parse-server.svg)](https://greenkeeper.io/)
 
-Parse Server is an [open source version of the Parse backend](http://blog.parse.com/announcements/introducing-parse-server-and-the-database-migration-tool/) that can be deployed to any infrastructure that can run Node.js.
+Parse Server is an [open source version of the Parse backend](http://blog.parseplatform.org/announcements/introducing-parse-server-and-the-database-migration-tool/) that can be deployed to any infrastructure that can run Node.js.
 
 Parse Server works with the Express web application framework. It can be added to existing web applications, or run by itself.
 
+- [Getting Started](#getting-started)
+    - [Running Parse Server](#running-parse-server)
+        - [Locally](#locally)
+        - [Docker](#inside-a-docker-container)
+        - [Saving an Object](#saving-your-first-object)
+        - [Connect an SDK](#connect-your-app-to-parse-server)
+    - [Running elsewhere](#running-parse-server-elsewhere)
+        - [Sample Application](#parse-server-sample-application)
+        - [Parse Server + Express](#parse-server--express)
+    - [Logging](#logging)
+- [Documentation](#documentation)
+    - [Configuration](#configuration)
+        - [Basic Options](#basic-options)
+        - [Client Key Options](#client-key-options)
+        - [Advanced Options](#advanced-options)
+            - [Logging](#logging-1)
+            - [Email Verification & Password Reset](#email-verification-and-password-reset)
+        - [Using Environment Variables](#using-environment-variables-to-configure-parse-server)
+        - [Available Adapters](#available-adapters)
+        - [Configuring File Adapters](#configuring-file-adapters)
+- [Support](#support)
+- [Ride the Bleeding Edge](#want-to-ride-the-bleeding-edge)
+- [Contributing](#contributing)
+- [Backers](#backers)
+- [Upgrading to 3.0.0](#upgrading-to-3.0.0)
+- [Sponsors](#sponsors)
+
 # Getting Started
 
-[![Greenkeeper badge](https://badges.greenkeeper.io/parse-community/parse-server.svg)](https://greenkeeper.io/)
-
-
-April 2016 - We created a series of video screencasts, please check them out here: [http://blog.parse.com/learn/parse-server-video-series-april-2016/](http://blog.parse.com/learn/parse-server-video-series-april-2016/)
+April 2016 - We created a series of video screencasts, please check them out here: [http://blog.parseplatform.org/learn/parse-server-video-series-april-2016/](http://blog.parseplatform.org/learn/parse-server-video-series-april-2016/)
 
 The fastest and easiest way to get started is to run MongoDB and Parse Server locally.
 
@@ -130,7 +154,7 @@ We have provided a basic [Node.js application](https://github.com/parse-communit
 * [Digital Ocean](https://www.digitalocean.com/community/tutorials/how-to-run-parse-server-on-ubuntu-14-04)
 * [Pivotal Web Services](https://github.com/cf-platform-eng/pws-parse-server)
 * [Back4app](http://blog.back4app.com/2016/03/01/quick-wizard-migration/)
-* [Gomix](https://gomix.com/#!/project/parse-server)
+* [Glitch](https://glitch.com/edit/#!/parse-server)
 * [Flynn](https://flynn.io/blog/parse-apps-on-flynn)
 
 ### Parse Server + Express
@@ -209,6 +233,7 @@ The client keys used with Parse are no longer necessary with Parse Server. If yo
 #### Advanced options
 
 * `fileKey` - For migrated apps, this is necessary to provide access to files already hosted on Parse.
+* `preserveFileName` - Set to true to remove the unique hash added to the file names. Defaults to false.
 * `allowClientClassCreation` - Set to false to disable client class creation. Defaults to true.
 * `enableAnonymousUsers` - Set to false to disable anonymous users. Defaults to true.
 * `auth` - Used to configure support for [3rd party authentication](http://docs.parseplatform.org/parse-server/guide/#oauth-and-3rd-party-authentication).
@@ -227,6 +252,7 @@ The client keys used with Parse are no longer necessary with Parse Server. If yo
 * `middleware` - (CLI only), a module name, function that is an express middleware. When using the CLI, the express app will load it just **before** mounting parse-server on the mount path. This option is useful for injecting a monitoring middleware.
 * `masterKeyIps` - The array of ip addresses where masterKey usage will be restricted to only these ips. (Default to [] which means allow all ips). If you're using this feature and have `useMasterKey: true` in cloudcode, make sure that you put your own ip in this list.
 * `readOnlyMasterKey` -  A masterKey that has full read access to the data, but no write access. This key should be treated the same way as your masterKey, keeping it private.
+* `objectIdSize` - The string length of the newly generated object's ids.
 
 ##### Logging
 
@@ -271,7 +297,7 @@ var server = ParseServer({
   appName: 'Parse App',
   // The email adapter
   emailAdapter: {
-    module: 'parse-server-simple-mailgun-adapter',
+    module: '@parse/simple-mailgun-adapter',
     options: {
       // The address that your emails come from
       fromAddress: 'parse@example.com',
@@ -311,8 +337,10 @@ You can also use other email adapters contributed by the community such as:
 - [parse-server-mandrill-adapter](https://www.npmjs.com/package/parse-server-mandrill-adapter)
 - [parse-server-simple-ses-adapter](https://www.npmjs.com/package/parse-server-simple-ses-adapter)
 - [parse-server-mailgun-adapter-template](https://www.npmjs.com/package/parse-server-mailgun-adapter-template)
+- [parse-server-sendinblue-adapter](https://www.npmjs.com/package/parse-server-sendinblue-adapter)
 - [parse-server-mailjet-adapter](https://www.npmjs.com/package/parse-server-mailjet-adapter)
 - [simple-parse-smtp-adapter](https://www.npmjs.com/package/simple-parse-smtp-adapter)
+- [parse-server-generic-email-adapter](https://www.npmjs.com/package/parse-server-generic-email-adapter)
 
 ### Using environment variables to configure Parse Server
 
@@ -324,7 +352,7 @@ PARSE_SERVER_APPLICATION_ID
 PARSE_SERVER_MASTER_KEY
 PARSE_SERVER_DATABASE_URI
 PARSE_SERVER_URL
-PARSE_SERVER_CLOUD_CODE_MAIN
+PARSE_SERVER_CLOUD
 ```
 
 The default port is 1337, to use a different port set the PORT environment variable:
@@ -336,17 +364,30 @@ $ PORT=8080 parse-server --appId APPLICATION_ID --masterKey MASTER_KEY
 For the full list of configurable environment variables, run `parse-server --help`.
 
 ### Available Adapters
-[Parse Server Modules (Adapters)](https://github.com/parse-server-modules)
+
+All official adapters are distributed as scoped pacakges on [npm (@parse)](https://www.npmjs.com/search?q=scope%3Aparse).
+
+Some well maintained adapters are also available on the [Parse Server Modules](https://github.com/parse-server-modules) organization.
+
+You can also find more adapters maintained by the community by searching on [npm](https://www.npmjs.com/search?q=parse-server%20adapter&page=1&ranking=optimal).
 
 ### Configuring File Adapters
 
 Parse Server allows developers to choose from several options when hosting files:
 
-* `GridStoreAdapter`, which is backed by MongoDB;
+* `GridFSBucketAdapter`, which is backed by MongoDB;
 * `S3Adapter`, which is backed by [Amazon S3](https://aws.amazon.com/s3/); or
 * `GCSAdapter`, which is backed by [Google Cloud Storage](https://cloud.google.com/storage/)
 
-`GridStoreAdapter` is used by default and requires no setup, but if you're interested in using S3 or Google Cloud Storage, additional configuration information is available in the [Parse Server guide](http://docs.parseplatform.org/parse-server/guide/#configuring-file-adapters).
+`GridFSBucketAdapter` is used by default and requires no setup, but if you're interested in using S3 or Google Cloud Storage, additional configuration information is available in the [Parse Server guide](http://docs.parseplatform.org/parse-server/guide/#configuring-file-adapters).
+
+# Upgrading to 3.0.0
+
+Starting 3.0.0, parse-server uses the JS SDK version 2.0. 
+In short, parse SDK v2.0 removes the backbone style callbacks as well as the Parse.Promise object in favor of native promises.
+All the Cloud Code interfaces also have been updated to reflect those changes, and all backbone style response objects are removed and replaced by Promise style resolution.
+
+We have written up a [migration guide](3.0.0.md), hoping this will help you transition to the next major release.
 
 # Support
 
@@ -362,15 +403,23 @@ If you believe you've found an issue with Parse Server, make sure these boxes ar
 
 # Want to ride the bleeding edge?
 
-The `latest` branch in this repository is automatically maintained to be the last
-commit to `master` to pass all tests, in the same form found on npm. It is
-recommend to use builds deployed npm for many reasons, but if you want to use
+It is recommend to use builds deployed npm for many reasons, but if you want to use
 the latest not-yet-released version of parse-server, you can do so by depending
 directly on this branch:
 
 ```
-npm install parseplatform/parse-server.git#latest
+npm install parse-community/parse-server.git#master
 ```
+
+## Experimenting
+
+You can also use your own forks, and work in progress branches by specifying them:
+
+```
+npm install github:myUsername/parse-server#my-awesome-feature
+```
+
+And don't forget, if you plan to deploy it remotely, you should run `npm install` with the `--save` option.
 
 # Contributing
 

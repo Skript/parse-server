@@ -20,14 +20,13 @@
       "describe_only": true,
       "on_db": true,
       "defaultConfiguration": true,
-      "expectSuccess": true,
       "range": true,
-      "expectError": true,
       "jequal": true,
       "create": true,
       "arrayContains": true
     },
     "rules": {
-      "no-console": [0]
+      "no-console": [0],
+      "no-var": "error"
     }
 }
