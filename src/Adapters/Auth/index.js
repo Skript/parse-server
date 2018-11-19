@@ -26,6 +26,24 @@ const anonymous = {
   },
 };
 
+const idfa = {
+  validateAuthData: () => {
+    return Promise.resolve();
+  },
+  validateAppId: () => {
+    return Promise.resolve();
+  },
+};
+
+const gaid = {
+  validateAuthData: () => {
+    return Promise.resolve();
+  },
+  validateAppId: () => {
+    return Promise.resolve();
+  },
+};
+
 const providers = {
   facebook,
   facebookaccountkit,
@@ -44,6 +62,8 @@ const providers = {
   qq,
   wechat,
   weibo,
+  idfa,
+  gaid
 };
 function authDataValidator(adapter, appIds, options) {
   return function(authData) {
