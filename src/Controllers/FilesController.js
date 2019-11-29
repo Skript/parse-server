@@ -1,7 +1,7 @@
 // FilesController.js
 import { randomHexString } from '../cryptoUtils';
 import AdaptableController from './AdaptableController';
-import { FilesAdapter } from '../Adapters/Files/FilesAdapter';
+import { validateFilename, FilesAdapter } from '../Adapters/Files/FilesAdapter';
 import path from 'path';
 import mime from 'mime';
 
@@ -92,8 +92,15 @@ export class FilesController extends AdaptableController {
     return FilesAdapter;
   }
 
-  getFileStream(config, filename) {
-    return this.adapter.getFileStream(filename);
+  handleFileStream(config, filename, req, res, contentType) {
+    return this.adapter.handleFileStream(filename, req, res, contentType);
+  }
+
+  validateFilename(filename) {
+    if (typeof this.adapter.validateFilename === 'function') {
+      return this.adapter.validateFilename(filename);
+    }
+    return validateFilename(filename);
   }
 }
 

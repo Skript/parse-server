@@ -5,6 +5,14 @@ const MongoStorageAdapter = require('../lib/Adapters/Storage/Mongo/MongoStorageA
 const { MongoClient } = require('mongodb');
 const databaseURI =
   'mongodb://localhost:27017/parseServerMongoAdapterTestDatabase';
+const request = require('../lib/request');
+const Config = require('../lib/Config');
+const TestUtils = require('../lib/TestUtils');
+
+const fakeClient = {
+  s: { options: { dbName: null } },
+  db: () => null,
+};
 
 // These tests are specific to the mongo storage adapter + mongo storage format
 // and will eventually be moved into their own repo
@@ -16,7 +24,7 @@ describe_only_db('mongo')('MongoStorageAdapter', () => {
   });
 
   it('auto-escapes symbols in auth information', () => {
-    spyOn(MongoClient, 'connect').and.returnValue(Promise.resolve(null));
+    spyOn(MongoClient, 'connect').and.returnValue(Promise.resolve(fakeClient));
     new MongoStorageAdapter({
       uri:
         'mongodb://user!with@+ symbols:password!with@+ symbols@localhost:1234/parse',
@@ -28,7 +36,7 @@ describe_only_db('mongo')('MongoStorageAdapter', () => {
   });
 
   it("doesn't double escape already URI-encoded information", () => {
-    spyOn(MongoClient, 'connect').and.returnValue(Promise.resolve(null));
+    spyOn(MongoClient, 'connect').and.returnValue(Promise.resolve(fakeClient));
     new MongoStorageAdapter({
       uri:
         'mongodb://user!with%40%2B%20symbols:password!with%40%2B%20symbols@localhost:1234/parse',
@@ -41,7 +49,7 @@ describe_only_db('mongo')('MongoStorageAdapter', () => {
 
   // https://github.com/parse-community/parse-server/pull/148#issuecomment-180407057
   it('preserves replica sets', () => {
-    spyOn(MongoClient, 'connect').and.returnValue(Promise.resolve(null));
+    spyOn(MongoClient, 'connect').and.returnValue(Promise.resolve(fakeClient));
     new MongoStorageAdapter({
       uri:
         'mongodb://test:testpass@ds056315-a0.mongolab.com:59325,ds059315-a1.mongolab.com:59315/testDBname?replicaSet=rs-ds059415',
@@ -275,10 +283,265 @@ describe_only_db('mongo')('MongoStorageAdapter', () => {
     };
 
     adapter.createObject('MyClass', schema, {}).then(() => {
-      expect(adapter.database.serverConfig.isConnected()).toEqual(true);
-      adapter.handleShutdown();
-      expect(adapter.database.serverConfig.isConnected()).toEqual(false);
-      done();
+      expect(adapter.database.serverConfig.connections().length > 0).toEqual(
+        true
+      );
+      expect(adapter.database.serverConfig.s.connected).toEqual(true);
+      adapter.handleShutdown().then(() => {
+        expect(adapter.database.serverConfig.connections().length > 0).toEqual(
+          false
+        );
+        expect(adapter.database.serverConfig.s.connected).toEqual(false);
+        done();
+      });
     });
   });
+
+  it('getClass if exists', async () => {
+    const adapter = new MongoStorageAdapter({ uri: databaseURI });
+
+    const schema = {
+      fields: {
+        array: { type: 'Array' },
+        object: { type: 'Object' },
+        date: { type: 'Date' },
+      },
+    };
+
+    await adapter.createClass('MyClass', schema);
+    const myClassSchema = await adapter.getClass('MyClass');
+    expect(myClassSchema).toBeDefined();
+  });
+
+  it('getClass if not exists', async () => {
+    const adapter = new MongoStorageAdapter({ uri: databaseURI });
+    await expectAsync(adapter.getClass('UnknownClass')).toBeRejectedWith(
+      undefined
+    );
+  });
+
+  if (
+    process.env.MONGODB_VERSION === '4.0.4' &&
+    process.env.MONGODB_TOPOLOGY === 'replicaset' &&
+    process.env.MONGODB_STORAGE_ENGINE === 'wiredTiger'
+  ) {
+    describe('transactions', () => {
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-Parse-Application-Id': 'test',
+        'X-Parse-REST-API-Key': 'rest',
+      };
+
+      beforeAll(async () => {
+        await reconfigureServer({
+          databaseAdapter: undefined,
+          databaseURI:
+            'mongodb://localhost:27017/parseServerMongoAdapterTestDatabase?replicaSet=replicaset',
+        });
+      });
+
+      beforeEach(async () => {
+        await TestUtils.destroyAllDataPermanently(true);
+      });
+
+      it('should use transaction in a batch with transaction = true', async () => {
+        const myObject = new Parse.Object('MyObject');
+        await myObject.save();
+
+        const databaseAdapter = Config.get(Parse.applicationId).database
+          .adapter;
+        spyOn(
+          databaseAdapter.database.serverConfig,
+          'command'
+        ).and.callThrough();
+
+        await request({
+          method: 'POST',
+          headers: headers,
+          url: 'http://localhost:8378/1/batch',
+          body: JSON.stringify({
+            requests: [
+              {
+                method: 'PUT',
+                path: '/1/classes/MyObject/' + myObject.id,
+                body: { myAttribute: 'myValue' },
+              },
+            ],
+            transaction: true,
+          }),
+        });
+
+        let found = false;
+        databaseAdapter.database.serverConfig.command.calls
+          .all()
+          .forEach(call => {
+            found = true;
+            expect(call.args[2].session.transaction.state).not.toBe(
+              'NO_TRANSACTION'
+            );
+          });
+        expect(found).toBe(true);
+      });
+
+      it('should not use transaction in a batch with transaction = false', async () => {
+        const myObject = new Parse.Object('MyObject');
+        await myObject.save();
+
+        const databaseAdapter = Config.get(Parse.applicationId).database
+          .adapter;
+        spyOn(
+          databaseAdapter.database.serverConfig,
+          'command'
+        ).and.callThrough();
+
+        await request({
+          method: 'POST',
+          headers: headers,
+          url: 'http://localhost:8378/1/batch',
+          body: JSON.stringify({
+            requests: [
+              {
+                method: 'PUT',
+                path: '/1/classes/MyObject/' + myObject.id,
+                body: { myAttribute: 'myValue' },
+              },
+            ],
+            transaction: false,
+          }),
+        });
+
+        let found = false;
+        databaseAdapter.database.serverConfig.command.calls
+          .all()
+          .forEach(call => {
+            found = true;
+            expect(call.args[2].session).toBe(undefined);
+          });
+        expect(found).toBe(true);
+      });
+
+      it('should not use transaction in a batch with no transaction option sent', async () => {
+        const myObject = new Parse.Object('MyObject');
+        await myObject.save();
+
+        const databaseAdapter = Config.get(Parse.applicationId).database
+          .adapter;
+        spyOn(
+          databaseAdapter.database.serverConfig,
+          'command'
+        ).and.callThrough();
+
+        await request({
+          method: 'POST',
+          headers: headers,
+          url: 'http://localhost:8378/1/batch',
+          body: JSON.stringify({
+            requests: [
+              {
+                method: 'PUT',
+                path: '/1/classes/MyObject/' + myObject.id,
+                body: { myAttribute: 'myValue' },
+              },
+            ],
+          }),
+        });
+
+        let found = false;
+        databaseAdapter.database.serverConfig.command.calls
+          .all()
+          .forEach(call => {
+            found = true;
+            expect(call.args[2].session).toBe(undefined);
+          });
+        expect(found).toBe(true);
+      });
+
+      it('should not use transaction in a put request', async () => {
+        const myObject = new Parse.Object('MyObject');
+        await myObject.save();
+
+        const databaseAdapter = Config.get(Parse.applicationId).database
+          .adapter;
+        spyOn(
+          databaseAdapter.database.serverConfig,
+          'command'
+        ).and.callThrough();
+
+        await request({
+          method: 'PUT',
+          headers: headers,
+          url: 'http://localhost:8378/1/classes/MyObject/' + myObject.id,
+          body: { myAttribute: 'myValue' },
+        });
+
+        let found = false;
+        databaseAdapter.database.serverConfig.command.calls
+          .all()
+          .forEach(call => {
+            found = true;
+            expect(call.args[2].session).toBe(undefined);
+          });
+        expect(found).toBe(true);
+      });
+
+      it('should not use transactions when using SDK insert', async () => {
+        const databaseAdapter = Config.get(Parse.applicationId).database
+          .adapter;
+        spyOn(
+          databaseAdapter.database.serverConfig,
+          'insert'
+        ).and.callThrough();
+
+        const myObject = new Parse.Object('MyObject');
+        await myObject.save();
+
+        const calls = databaseAdapter.database.serverConfig.insert.calls.all();
+        expect(calls.length).toBeGreaterThan(0);
+        calls.forEach(call => {
+          expect(call.args[2].session.transaction.state).toBe('NO_TRANSACTION');
+        });
+      });
+
+      it('should not use transactions when using SDK update', async () => {
+        const databaseAdapter = Config.get(Parse.applicationId).database
+          .adapter;
+        spyOn(
+          databaseAdapter.database.serverConfig,
+          'update'
+        ).and.callThrough();
+
+        const myObject = new Parse.Object('MyObject');
+        await myObject.save();
+
+        myObject.set('myAttribute', 'myValue');
+        await myObject.save();
+
+        const calls = databaseAdapter.database.serverConfig.update.calls.all();
+        expect(calls.length).toBeGreaterThan(0);
+        calls.forEach(call => {
+          expect(call.args[2].session.transaction.state).toBe('NO_TRANSACTION');
+        });
+      });
+
+      it('should not use transactions when using SDK delete', async () => {
+        const databaseAdapter = Config.get(Parse.applicationId).database
+          .adapter;
+        spyOn(
+          databaseAdapter.database.serverConfig,
+          'remove'
+        ).and.callThrough();
+
+        const myObject = new Parse.Object('MyObject');
+        await myObject.save();
+
+        await myObject.destroy();
+
+        const calls = databaseAdapter.database.serverConfig.remove.calls.all();
+        expect(calls.length).toBeGreaterThan(0);
+        calls.forEach(call => {
+          expect(call.args[2].session.transaction.state).toBe('NO_TRANSACTION');
+        });
+      });
+    });
+  }
 });

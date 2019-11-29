@@ -5,18 +5,25 @@ const defaultColumns = require('../lib/Controllers/SchemaController')
 const authenticationLoader = require('../lib/Adapters/Auth');
 const path = require('path');
 const responses = {
+  gpgames: { playerId: 'userId' },
   instagram: { data: { id: 'userId' } },
   janrainengage: { stat: 'ok', profile: { identifier: 'userId' } },
   janraincapture: { stat: 'ok', result: 'userId' },
+  line: { userId: 'userId' },
   vkontakte: { response: [{ id: 'userId' }] },
   google: { sub: 'userId' },
   wechat: { errcode: 0 },
   weibo: { uid: 'userId' },
   qq: 'callback( {"openid":"userId"} );', // yes it's like that, run eval in the client :P
+  phantauth: { sub: 'userId' },
+  microsoft: { id: 'userId', mail: 'userMail' },
 };
 
 describe('AuthenticationProviders', function() {
   [
+    'apple',
+    'gcenter',
+    'gpgames',
     'facebook',
     'facebookaccountkit',
     'github',
@@ -27,27 +34,40 @@ describe('AuthenticationProviders', function() {
     'twitter',
     'janrainengage',
     'janraincapture',
+    'line',
     'vkontakte',
     'qq',
     'spotify',
     'wechat',
     'weibo',
+    'phantauth',
+    'microsoft',
   ].map(function(providerName) {
     it('Should validate structure of ' + providerName, done => {
       const provider = require('../lib/Adapters/Auth/' + providerName);
       jequal(typeof provider.validateAuthData, 'function');
       jequal(typeof provider.validateAppId, 'function');
-      const authDataPromise = provider.validateAuthData({}, {});
+      const validateAuthDataPromise = provider.validateAuthData({}, {});
       const validateAppIdPromise = provider.validateAppId('app', 'key', {});
-      jequal(authDataPromise.constructor, Promise.prototype.constructor);
+      jequal(
+        validateAuthDataPromise.constructor,
+        Promise.prototype.constructor
+      );
       jequal(validateAppIdPromise.constructor, Promise.prototype.constructor);
-      authDataPromise.then(() => {}, () => {});
-      validateAppIdPromise.then(() => {}, () => {});
+      validateAuthDataPromise.then(
+        () => {},
+        () => {}
+      );
+      validateAppIdPromise.then(
+        () => {},
+        () => {}
+      );
       done();
     });
 
     it(`should provide the right responses for adapter ${providerName}`, async () => {
-      if (providerName === 'twitter') {
+      const noResponse = ['twitter', 'apple', 'gcenter'];
+      if (noResponse.includes(providerName)) {
         return;
       }
       spyOn(require('../lib/Adapters/Auth/httpsRequest'), 'get').and.callFake(
@@ -412,6 +432,7 @@ describe('AuthenticationProviders', function() {
     const options = {
       facebook: {
         appIds: ['a', 'b'],
+        appSecret: 'secret',
       },
     };
     const {
@@ -422,6 +443,56 @@ describe('AuthenticationProviders', function() {
     validateAuthenticationAdapter(adapter);
     expect(appIds).toEqual(['a', 'b']);
     expect(providerOptions).toEqual(options.facebook);
+  });
+
+  it('should handle Facebook appSecret for validating appIds', async () => {
+    const httpsRequest = require('../lib/Adapters/Auth/httpsRequest');
+    spyOn(httpsRequest, 'get').and.callFake(() => {
+      return Promise.resolve({ id: 'a' });
+    });
+    const options = {
+      facebook: {
+        appIds: ['a', 'b'],
+        appSecret: 'secret_sauce',
+      },
+    };
+    const authData = {
+      access_token: 'badtoken',
+    };
+    const {
+      adapter,
+      appIds,
+      providerOptions,
+    } = authenticationLoader.loadAuthAdapter('facebook', options);
+    await adapter.validateAppId(appIds, authData, providerOptions);
+    expect(
+      httpsRequest.get.calls.first().args[0].includes('appsecret_proof')
+    ).toBe(true);
+  });
+
+  it('should handle Facebook appSecret for validating auth data', async () => {
+    const httpsRequest = require('../lib/Adapters/Auth/httpsRequest');
+    spyOn(httpsRequest, 'get').and.callFake(() => {
+      return Promise.resolve();
+    });
+    const options = {
+      facebook: {
+        appIds: ['a', 'b'],
+        appSecret: 'secret_sauce',
+      },
+    };
+    const authData = {
+      id: 'test',
+      access_token: 'test',
+    };
+    const { adapter, providerOptions } = authenticationLoader.loadAuthAdapter(
+      'facebook',
+      options
+    );
+    await adapter.validateAuthData(authData, providerOptions);
+    expect(
+      httpsRequest.get.calls.first().args[0].includes('appsecret_proof')
+    ).toBe(true);
   });
 
   it('properly loads a custom adapter with options', () => {
@@ -582,5 +653,678 @@ describe('google auth adapter', () => {
     } catch (e) {
       expect(e.message).toBe('Google auth is invalid for this user.');
     }
+  });
+});
+
+describe('google play games service auth', () => {
+  const gpgames = require('../lib/Adapters/Auth/gpgames');
+  const httpsRequest = require('../lib/Adapters/Auth/httpsRequest');
+
+  it('validateAuthData should pass validation', async () => {
+    spyOn(httpsRequest, 'get').and.callFake(() => {
+      return Promise.resolve({ playerId: 'userId' });
+    });
+    await gpgames.validateAuthData({
+      id: 'userId',
+      access_token: 'access_token',
+    });
+  });
+
+  it('validateAuthData should throw error', async () => {
+    spyOn(httpsRequest, 'get').and.callFake(() => {
+      return Promise.resolve({ playerId: 'invalid' });
+    });
+    try {
+      await gpgames.validateAuthData({
+        id: 'userId',
+        access_token: 'access_token',
+      });
+    } catch (e) {
+      expect(e.message).toBe(
+        'Google Play Games Services - authData is invalid for this user.'
+      );
+    }
+  });
+});
+
+describe('oauth2 auth adapter', () => {
+  const oauth2 = require('../lib/Adapters/Auth/oauth2');
+  const httpsRequest = require('../lib/Adapters/Auth/httpsRequest');
+
+  it('properly loads OAuth2 adapter via the "oauth2" option', () => {
+    const options = {
+      oauth2Authentication: {
+        oauth2: true,
+      },
+    };
+    const loadedAuthAdapter = authenticationLoader.loadAuthAdapter(
+      'oauth2Authentication',
+      options
+    );
+    expect(loadedAuthAdapter.adapter).toEqual(oauth2);
+  });
+
+  it('properly loads OAuth2 adapter with options', () => {
+    const options = {
+      oauth2Authentication: {
+        oauth2: true,
+        tokenIntrospectionEndpointUrl: 'https://example.com/introspect',
+        useridField: 'sub',
+        appidField: 'appId',
+        appIds: ['a', 'b'],
+        authorizationHeader: 'Basic dXNlcm5hbWU6cGFzc3dvcmQ=',
+        debug: true,
+      },
+    };
+    const loadedAuthAdapter = authenticationLoader.loadAuthAdapter(
+      'oauth2Authentication',
+      options
+    );
+    const appIds = loadedAuthAdapter.appIds;
+    const providerOptions = loadedAuthAdapter.providerOptions;
+    expect(providerOptions.tokenIntrospectionEndpointUrl).toEqual(
+      'https://example.com/introspect'
+    );
+    expect(providerOptions.useridField).toEqual('sub');
+    expect(providerOptions.appidField).toEqual('appId');
+    expect(appIds).toEqual(['a', 'b']);
+    expect(providerOptions.authorizationHeader).toEqual(
+      'Basic dXNlcm5hbWU6cGFzc3dvcmQ='
+    );
+    expect(providerOptions.debug).toEqual(true);
+  });
+
+  it('validateAppId should fail if OAuth2 tokenIntrospectionEndpointUrl is not configured properly', async () => {
+    const options = {
+      oauth2Authentication: {
+        oauth2: true,
+        appIds: ['a', 'b'],
+        appidField: 'appId',
+      },
+    };
+    const authData = {
+      id: 'fakeid',
+      access_token: 'sometoken',
+    };
+    const {
+      adapter,
+      appIds,
+      providerOptions,
+    } = authenticationLoader.loadAuthAdapter('oauth2Authentication', options);
+    try {
+      await adapter.validateAppId(appIds, authData, providerOptions);
+    } catch (e) {
+      expect(e.message).toBe(
+        'OAuth2 token introspection endpoint URL is missing from configuration!'
+      );
+    }
+  });
+
+  it('validateAppId appidField optional', async () => {
+    const options = {
+      oauth2Authentication: {
+        oauth2: true,
+        tokenIntrospectionEndpointUrl: 'https://example.com/introspect',
+      },
+    };
+    const authData = {
+      id: 'fakeid',
+      access_token: 'sometoken',
+    };
+    const {
+      adapter,
+      appIds,
+      providerOptions,
+    } = authenticationLoader.loadAuthAdapter('oauth2Authentication', options);
+    try {
+      await adapter.validateAppId(appIds, authData, providerOptions);
+    } catch (e) {
+      // Should not reach here
+      fail(e);
+    }
+  });
+
+  it('validateAppId should fail without appIds', async () => {
+    const options = {
+      oauth2Authentication: {
+        oauth2: true,
+        tokenIntrospectionEndpointUrl: 'https://example.com/introspect',
+        appidField: 'appId',
+      },
+    };
+    const authData = {
+      id: 'fakeid',
+      access_token: 'sometoken',
+    };
+    const {
+      adapter,
+      appIds,
+      providerOptions,
+    } = authenticationLoader.loadAuthAdapter('oauth2Authentication', options);
+    try {
+      await adapter.validateAppId(appIds, authData, providerOptions);
+    } catch (e) {
+      expect(e.message).toBe(
+        'OAuth2 configuration is missing the client app IDs ("appIds" config parameter).'
+      );
+    }
+  });
+
+  it('validateAppId should fail empty appIds', async () => {
+    const options = {
+      oauth2Authentication: {
+        oauth2: true,
+        tokenIntrospectionEndpointUrl: 'https://example.com/introspect',
+        appidField: 'appId',
+        appIds: [],
+      },
+    };
+    const authData = {
+      id: 'fakeid',
+      access_token: 'sometoken',
+    };
+    const {
+      adapter,
+      appIds,
+      providerOptions,
+    } = authenticationLoader.loadAuthAdapter('oauth2Authentication', options);
+    try {
+      await adapter.validateAppId(appIds, authData, providerOptions);
+    } catch (e) {
+      expect(e.message).toBe(
+        'OAuth2 configuration is missing the client app IDs ("appIds" config parameter).'
+      );
+    }
+  });
+
+  it('validateAppId invalid accessToken', async () => {
+    const options = {
+      oauth2Authentication: {
+        oauth2: true,
+        tokenIntrospectionEndpointUrl: 'https://example.com/introspect',
+        appidField: 'appId',
+        appIds: ['a', 'b'],
+      },
+    };
+    const authData = {
+      id: 'fakeid',
+      access_token: 'sometoken',
+    };
+    const {
+      adapter,
+      appIds,
+      providerOptions,
+    } = authenticationLoader.loadAuthAdapter('oauth2Authentication', options);
+    spyOn(httpsRequest, 'request').and.callFake(() => {
+      return Promise.resolve({});
+    });
+    try {
+      await adapter.validateAppId(appIds, authData, providerOptions);
+    } catch (e) {
+      expect(e.message).toBe('OAuth2 access token is invalid for this user.');
+    }
+  });
+
+  it('validateAppId invalid accessToken appId', async () => {
+    const options = {
+      oauth2Authentication: {
+        oauth2: true,
+        tokenIntrospectionEndpointUrl: 'https://example.com/introspect',
+        appidField: 'appId',
+        appIds: ['a', 'b'],
+      },
+    };
+    const authData = {
+      id: 'fakeid',
+      access_token: 'sometoken',
+    };
+    const {
+      adapter,
+      appIds,
+      providerOptions,
+    } = authenticationLoader.loadAuthAdapter('oauth2Authentication', options);
+    spyOn(httpsRequest, 'request').and.callFake(() => {
+      return Promise.resolve({ active: true });
+    });
+    try {
+      await adapter.validateAppId(appIds, authData, providerOptions);
+    } catch (e) {
+      expect(e.message).toBe(
+        "OAuth2: the access_token's appID is empty or is not in the list of permitted appIDs in the auth configuration."
+      );
+    }
+  });
+
+  it('validateAppId valid accessToken appId', async () => {
+    const options = {
+      oauth2Authentication: {
+        oauth2: true,
+        tokenIntrospectionEndpointUrl: 'https://example.com/introspect',
+        appidField: 'appId',
+        appIds: ['a', 'b'],
+      },
+    };
+    const authData = {
+      id: 'fakeid',
+      access_token: 'sometoken',
+    };
+    const {
+      adapter,
+      appIds,
+      providerOptions,
+    } = authenticationLoader.loadAuthAdapter('oauth2Authentication', options);
+    spyOn(httpsRequest, 'request').and.callFake(() => {
+      return Promise.resolve({
+        active: true,
+        appId: 'a',
+      });
+    });
+    try {
+      await adapter.validateAppId(appIds, authData, providerOptions);
+    } catch (e) {
+      // Should not enter here
+      fail(e);
+    }
+  });
+
+  it('validateAppId valid accessToken appId array', async () => {
+    const options = {
+      oauth2Authentication: {
+        oauth2: true,
+        tokenIntrospectionEndpointUrl: 'https://example.com/introspect',
+        appidField: 'appId',
+        appIds: ['a', 'b'],
+      },
+    };
+    const authData = {
+      id: 'fakeid',
+      access_token: 'sometoken',
+    };
+    const {
+      adapter,
+      appIds,
+      providerOptions,
+    } = authenticationLoader.loadAuthAdapter('oauth2Authentication', options);
+    spyOn(httpsRequest, 'request').and.callFake(() => {
+      return Promise.resolve({
+        active: true,
+        appId: ['a'],
+      });
+    });
+    try {
+      await adapter.validateAppId(appIds, authData, providerOptions);
+    } catch (e) {
+      // Should not enter here
+      fail(e);
+    }
+  });
+
+  it('validateAppId valid accessToken invalid appId', async () => {
+    const options = {
+      oauth2Authentication: {
+        oauth2: true,
+        tokenIntrospectionEndpointUrl: 'https://example.com/introspect',
+        appidField: 'appId',
+        appIds: ['a', 'b'],
+      },
+    };
+    const authData = {
+      id: 'fakeid',
+      access_token: 'sometoken',
+    };
+    const {
+      adapter,
+      appIds,
+      providerOptions,
+    } = authenticationLoader.loadAuthAdapter('oauth2Authentication', options);
+    spyOn(httpsRequest, 'request').and.callFake(() => {
+      return Promise.resolve({
+        active: true,
+        appId: 'unknown',
+      });
+    });
+    try {
+      await adapter.validateAppId(appIds, authData, providerOptions);
+    } catch (e) {
+      expect(e.message).toBe(
+        "OAuth2: the access_token's appID is empty or is not in the list of permitted appIDs in the auth configuration."
+      );
+    }
+  });
+
+  it('validateAuthData should fail if OAuth2 tokenIntrospectionEndpointUrl is not configured properly', async () => {
+    const options = {
+      oauth2Authentication: {
+        oauth2: true,
+      },
+    };
+    const authData = {
+      id: 'fakeid',
+      access_token: 'sometoken',
+    };
+    const { adapter, providerOptions } = authenticationLoader.loadAuthAdapter(
+      'oauth2Authentication',
+      options
+    );
+    try {
+      await adapter.validateAuthData(authData, providerOptions);
+    } catch (e) {
+      expect(e.message).toBe(
+        'OAuth2 token introspection endpoint URL is missing from configuration!'
+      );
+    }
+  });
+
+  it('validateAuthData invalid accessToken', async () => {
+    const options = {
+      oauth2Authentication: {
+        oauth2: true,
+        tokenIntrospectionEndpointUrl: 'https://example.com/introspect',
+        useridField: 'sub',
+        appidField: 'appId',
+        appIds: ['a', 'b'],
+        authorizationHeader: 'Basic dXNlcm5hbWU6cGFzc3dvcmQ=',
+      },
+    };
+    const authData = {
+      id: 'fakeid',
+      access_token: 'sometoken',
+    };
+    const { adapter, providerOptions } = authenticationLoader.loadAuthAdapter(
+      'oauth2Authentication',
+      options
+    );
+    spyOn(httpsRequest, 'request').and.callFake(() => {
+      return Promise.resolve({});
+    });
+    try {
+      await adapter.validateAuthData(authData, providerOptions);
+    } catch (e) {
+      expect(e.message).toBe('OAuth2 access token is invalid for this user.');
+    }
+    expect(httpsRequest.request).toHaveBeenCalledWith(
+      {
+        hostname: 'example.com',
+        path: '/introspect',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': 15,
+          Authorization: 'Basic dXNlcm5hbWU6cGFzc3dvcmQ=',
+        },
+      },
+      'token=sometoken'
+    );
+  });
+
+  it('validateAuthData valid accessToken', async () => {
+    const options = {
+      oauth2Authentication: {
+        oauth2: true,
+        tokenIntrospectionEndpointUrl: 'https://example.com/introspect',
+        useridField: 'sub',
+        appidField: 'appId',
+        appIds: ['a', 'b'],
+      },
+    };
+    const authData = {
+      id: 'fakeid',
+      access_token: 'sometoken',
+    };
+    const { adapter, providerOptions } = authenticationLoader.loadAuthAdapter(
+      'oauth2Authentication',
+      options
+    );
+    spyOn(httpsRequest, 'request').and.callFake(() => {
+      return Promise.resolve({
+        active: true,
+        sub: 'fakeid',
+      });
+    });
+    try {
+      await adapter.validateAuthData(authData, providerOptions);
+    } catch (e) {
+      // Should not enter here
+      fail(e);
+    }
+    expect(httpsRequest.request).toHaveBeenCalledWith(
+      {
+        hostname: 'example.com',
+        path: '/introspect',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': 15,
+        },
+      },
+      'token=sometoken'
+    );
+  });
+
+  it('validateAuthData valid accessToken without useridField', async () => {
+    const options = {
+      oauth2Authentication: {
+        oauth2: true,
+        tokenIntrospectionEndpointUrl: 'https://example.com/introspect',
+        appidField: 'appId',
+        appIds: ['a', 'b'],
+      },
+    };
+    const authData = {
+      id: 'fakeid',
+      access_token: 'sometoken',
+    };
+    const { adapter, providerOptions } = authenticationLoader.loadAuthAdapter(
+      'oauth2Authentication',
+      options
+    );
+    spyOn(httpsRequest, 'request').and.callFake(() => {
+      return Promise.resolve({
+        active: true,
+        sub: 'fakeid',
+      });
+    });
+    try {
+      await adapter.validateAuthData(authData, providerOptions);
+    } catch (e) {
+      // Should not enter here
+      fail(e);
+    }
+  });
+});
+
+describe('apple signin auth adapter', () => {
+  const apple = require('../lib/Adapters/Auth/apple');
+  const jwt = require('jsonwebtoken');
+
+  it('should throw error with missing id_token', async () => {
+    try {
+      await apple.validateAuthData({}, { client_id: 'secret' });
+      fail();
+    } catch (e) {
+      expect(e.message).toBe('id token is invalid for this user.');
+    }
+  });
+
+  it('should not verify invalid id_token', async () => {
+    try {
+      await apple.validateAuthData(
+        { id: 'the_user_id', token: 'the_token' },
+        { client_id: 'secret' }
+      );
+      fail();
+    } catch (e) {
+      expect(e.message).toBe('jwt malformed');
+    }
+  });
+
+  it('should verify id_token', async () => {
+    const fakeClaim = {
+      iss: 'https://appleid.apple.com',
+      aud: 'secret',
+      exp: Date.now(),
+      sub: 'the_user_id',
+    };
+    spyOn(jwt, 'verify').and.callFake(() => fakeClaim);
+
+    const result = await apple.validateAuthData(
+      { id: 'the_user_id', token: 'the_token' },
+      { client_id: 'secret' }
+    );
+    expect(result).toEqual(fakeClaim);
+  });
+
+  it('should throw error with with invalid jwt issuer', async () => {
+    const fakeClaim = {
+      iss: 'https://not.apple.com',
+      sub: 'the_user_id',
+    };
+    spyOn(jwt, 'verify').and.callFake(() => fakeClaim);
+
+    try {
+      await apple.validateAuthData(
+        { id: 'the_user_id', token: 'the_token' },
+        { client_id: 'secret' }
+      );
+      fail();
+    } catch (e) {
+      expect(e.message).toBe(
+        'id token not issued by correct OpenID provider - expected: https://appleid.apple.com | from: https://not.apple.com'
+      );
+    }
+  });
+
+  it('should throw error with with invalid jwt client_id', async () => {
+    const fakeClaim = {
+      iss: 'https://appleid.apple.com',
+      aud: 'invalid_client_id',
+      sub: 'the_user_id',
+    };
+    spyOn(jwt, 'verify').and.callFake(() => fakeClaim);
+
+    try {
+      await apple.validateAuthData(
+        { id: 'the_user_id', token: 'the_token' },
+        { client_id: 'secret' }
+      );
+      fail();
+    } catch (e) {
+      expect(e.message).toBe(
+        'jwt aud parameter does not include this client - is: invalid_client_id | expected: secret'
+      );
+    }
+  });
+});
+
+describe('Apple Game Center Auth adapter', () => {
+  const gcenter = require('../lib/Adapters/Auth/gcenter');
+
+  it('validateAuthData should validate', async () => {
+    // real token is used
+    const authData = {
+      id: 'G:1965586982',
+      publicKeyUrl: 'https://static.gc.apple.com/public-key/gc-prod-4.cer',
+      timestamp: 1565257031287,
+      signature:
+        'uqLBTr9Uex8zCpc1UQ1MIDMitb+HUat2Mah4Kw6AVLSGe0gGNJXlih2i5X+0ZwVY0S9zY2NHWi2gFjmhjt/4kxWGMkupqXX5H/qhE2m7hzox6lZJpH98ZEUbouWRfZX2ZhUlCkAX09oRNi7fI7mWL1/o88MaI/y6k6tLr14JTzmlxgdyhw+QRLxRPA6NuvUlRSJpyJ4aGtNH5/wHdKQWL8nUnFYiYmaY8R7IjzNxPfy8UJTUWmeZvMSgND4u8EjADPsz7ZtZyWAPi8kYcAb6M8k0jwLD3vrYCB8XXyO2RQb/FY2TM4zJuI7PzLlvvgOJXbbfVtHx7Evnm5NYoyzgzw==',
+      salt: 'DzqqrQ==',
+      bundleId: 'cloud.xtralife.gamecenterauth',
+    };
+
+    try {
+      await gcenter.validateAuthData(authData);
+    } catch (e) {
+      fail();
+    }
+  });
+
+  it('validateAuthData invalid signature id', async () => {
+    const authData = {
+      id: 'G:1965586982',
+      publicKeyUrl: 'https://static.gc.apple.com/public-key/gc-prod-4.cer',
+      timestamp: 1565257031287,
+      signature: '1234',
+      salt: 'DzqqrQ==',
+      bundleId: 'cloud.xtralife.gamecenterauth',
+    };
+
+    try {
+      await gcenter.validateAuthData(authData);
+      fail();
+    } catch (e) {
+      expect(e.message).toBe('Apple Game Center - invalid signature');
+    }
+  });
+
+  it('validateAuthData invalid public key url', async () => {
+    const authData = {
+      id: 'G:1965586982',
+      publicKeyUrl: 'invalid.com',
+      timestamp: 1565257031287,
+      signature: '1234',
+      salt: 'DzqqrQ==',
+      bundleId: 'cloud.xtralife.gamecenterauth',
+    };
+
+    try {
+      await gcenter.validateAuthData(authData);
+      fail();
+    } catch (e) {
+      expect(e.message).toBe(
+        'Apple Game Center - invalid publicKeyUrl: invalid.com'
+      );
+    }
+  });
+});
+
+describe('phant auth adapter', () => {
+  const httpsRequest = require('../lib/Adapters/Auth/httpsRequest');
+
+  it('validateAuthData should throw for invalid auth', async () => {
+    const authData = {
+      id: 'fakeid',
+      access_token: 'sometoken',
+    };
+    const { adapter } = authenticationLoader.loadAuthAdapter('phantauth', {});
+
+    spyOn(httpsRequest, 'get').and.callFake(() =>
+      Promise.resolve({ sub: 'invalidID' })
+    );
+    try {
+      await adapter.validateAuthData(authData);
+      fail();
+    } catch (e) {
+      expect(e.message).toBe('PhantAuth auth is invalid for this user.');
+    }
+  });
+});
+
+describe('microsoft graph auth adapter', () => {
+  const microsoft = require('../lib/Adapters/Auth/microsoft');
+  const httpsRequest = require('../lib/Adapters/Auth/httpsRequest');
+
+  it('should use access_token for validation is passed and responds with id and mail', async () => {
+    spyOn(httpsRequest, 'get').and.callFake(() => {
+      return Promise.resolve({ id: 'userId', mail: 'userMail' });
+    });
+    await microsoft.validateAuthData({
+      id: 'userId',
+      access_token: 'the_token',
+    });
+  });
+
+  it('should fail to validate Microsoft Graph auth with bad token', done => {
+    const authData = {
+      id: 'fake-id',
+      mail: 'fake@mail.com',
+      access_token: 'very.long.bad.token',
+    };
+    microsoft.validateAuthData(authData).then(done.fail, err => {
+      expect(err.code).toBe(101);
+      expect(err.message).toBe(
+        'Microsoft Graph auth is invalid for this user.'
+      );
+      done();
+    });
   });
 });

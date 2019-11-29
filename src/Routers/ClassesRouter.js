@@ -3,7 +3,13 @@ import rest from '../rest';
 import _ from 'lodash';
 import Parse from 'parse/node';
 
-const ALLOWED_GET_QUERY_KEYS = ['keys', 'include'];
+const ALLOWED_GET_QUERY_KEYS = [
+  'keys',
+  'include',
+  'readPreference',
+  'includeReadPreference',
+  'subqueryReadPreference',
+];
 
 export class ClassesRouter extends PromiseRouter {
   className(req) {
@@ -30,33 +36,33 @@ export class ClassesRouter extends PromiseRouter {
     if (!body.where) {
       body.where = {};
     }
-    if (this.className(req) === "Category") {
+    if (this.className(req) === 'Category') {
       if (!isMaster && !body.where.lang) {
-        body.where.lang = "ru";
+        body.where.lang = 'ru';
       }
     }
-    if (this.className(req) === "Story") {
+    if (this.className(req) === 'Story') {
       if (!isMaster && !body.where.objectId && !body.where.textId) {
-        let now = new Date();
+        const now = new Date();
         if (!body.where.lang) {
-          body.where.lang = "ru";
+          body.where.lang = 'ru';
         }
         if (!body.where.releasedAt) {
-          body.where.releasedAt = {'$lt': now};
+          body.where.releasedAt = { $lt: now };
         }
       }
     }
-    if (this.className(req) === "Episode") {
+    if (this.className(req) === 'Episode') {
       if (!isMaster && !body.where.objectId) {
-        let now = new Date();
+        const now = new Date();
         if (!body.where.releasedAt) {
-          body.where.releasedAt = {'$lt': now};
+          body.where.releasedAt = { $lt: now };
         }
         if (body.where.app_version) {
           delete body.where.app_version;
         } else {
           if (!body.where.publishedAt) {
-            body.where.publishedAt = {'$lt': now};
+            body.where.publishedAt = { $lt: now };
           }
         }
       }
@@ -92,11 +98,20 @@ export class ClassesRouter extends PromiseRouter {
       }
     }
 
-    if (typeof body.keys == 'string') {
+    if (typeof body.keys === 'string') {
       options.keys = body.keys;
     }
     if (body.include) {
       options.include = String(body.include);
+    }
+    if (typeof body.readPreference === 'string') {
+      options.readPreference = body.readPreference;
+    }
+    if (typeof body.includeReadPreference === 'string') {
+      options.includeReadPreference = body.includeReadPreference;
+    }
+    if (typeof body.subqueryReadPreference === 'string') {
+      options.subqueryReadPreference = body.subqueryReadPreference;
     }
 
     return rest
@@ -185,10 +200,14 @@ export class ClassesRouter extends PromiseRouter {
       'order',
       'count',
       'keys',
+      'excludeKeys',
       'include',
       'includeAll',
       'redirectClassNameForKey',
       'where',
+      'readPreference',
+      'includeReadPreference',
+      'subqueryReadPreference',
     ];
 
     for (const key of Object.keys(body)) {
@@ -217,11 +236,23 @@ export class ClassesRouter extends PromiseRouter {
     if (typeof body.keys == 'string') {
       options.keys = body.keys;
     }
+    if (typeof body.excludeKeys == 'string') {
+      options.excludeKeys = body.excludeKeys;
+    }
     if (body.include) {
       options.include = String(body.include);
     }
     if (body.includeAll) {
       options.includeAll = true;
+    }
+    if (typeof body.readPreference === 'string') {
+      options.readPreference = body.readPreference;
+    }
+    if (typeof body.includeReadPreference === 'string') {
+      options.includeReadPreference = body.includeReadPreference;
+    }
+    if (typeof body.subqueryReadPreference === 'string') {
+      options.subqueryReadPreference = body.subqueryReadPreference;
     }
     return options;
   }

@@ -4,16 +4,19 @@ const WinstonLoggerAdapter = require('../lib/Adapters/Logger/WinstonLoggerAdapte
   .WinstonLoggerAdapter;
 const GridFSBucketAdapter = require('../lib/Adapters/Files/GridFSBucketAdapter')
   .GridFSBucketAdapter;
+const GridStoreAdapter = require('../lib/Adapters/Files/GridStoreAdapter')
+  .GridStoreAdapter;
 const Config = require('../lib/Config');
 const FilesController = require('../lib/Controllers/FilesController').default;
 
 const mockAdapter = {
   createFile: () => {
-    return Promise.reject(new Error('it failed'));
+    return Promise.reject(new Error('it failed with xyz'));
   },
   deleteFile: () => {},
   getFileData: () => {},
   getFileLocation: () => 'xyz',
+  validateFilename: () => {},
 };
 
 // Small additional tests to improve overall coverage
@@ -46,7 +49,6 @@ describe('FilesController', () => {
     const logController = new LoggerController(new WinstonLoggerAdapter());
 
     reconfigureServer({ filesAdapter: mockAdapter })
-      .then(() => new Promise(resolve => setTimeout(resolve, 1000)))
       .then(() => new Parse.File('yolo.txt', [1, 2, 3], 'text/plain').save())
       .then(
         () => done.fail('should not succeed'),
@@ -59,13 +61,18 @@ describe('FilesController', () => {
       .then(logs => {
         // we get two logs here: 1. the source of the failure to save the file
         // and 2 the message that will be sent back to the client.
-        const log1 = logs.pop();
+
+        const log1 = logs.find(
+          x => x.message === 'Error creating a file: it failed with xyz'
+        );
         expect(log1.level).toBe('error');
-        expect(log1.message).toBe('it failed');
-        const log2 = logs.pop();
+
+        const log2 = logs.find(
+          x => x.message === 'Could not store file: yolo.txt.'
+        );
         expect(log2.level).toBe('error');
         expect(log2.code).toBe(130);
-        expect(log2.message).toBe('Could not store file.');
+
         done();
       });
   });
@@ -112,6 +119,24 @@ describe('FilesController', () => {
       fileName
     );
 
+    done();
+  });
+
+  it('should reject slashes in file names', done => {
+    const gridStoreAdapter = new GridFSBucketAdapter(
+      'mongodb://localhost:27017/parse'
+    );
+    const fileName = 'foo/randomFileName.pdf';
+    expect(gridStoreAdapter.validateFilename(fileName)).not.toBe(null);
+    done();
+  });
+
+  it('should also reject slashes in file names', done => {
+    const gridStoreAdapter = new GridStoreAdapter(
+      'mongodb://localhost:27017/parse'
+    );
+    const fileName = 'foo/randomFileName.pdf';
+    expect(gridStoreAdapter.validateFilename(fileName)).not.toBe(null);
     done();
   });
 });
