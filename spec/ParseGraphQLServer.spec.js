@@ -2684,8 +2684,6 @@ describe('ParseGraphQLServer', () => {
                     customer(id: $id) {
                       id
                       someField
-                      createdAt
-                      updatedAt
                     }
                   }
                 `,
@@ -2736,6 +2734,10 @@ describe('ParseGraphQLServer', () => {
                                 value
                               }
                             }
+                          }
+                          ... on SomeClass {
+                            id
+                            someClassField
                           }
                           ... on SomeClass {
                             id
@@ -2830,6 +2832,10 @@ describe('ParseGraphQLServer', () => {
                                 name
                                 employees {
                                   ... on Employee {
+                                    country {
+                                      id
+                                      name
+                                    }
                                     id
                                     name
                                     country {
