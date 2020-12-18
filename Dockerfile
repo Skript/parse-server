@@ -1,5 +1,5 @@
 # Build stage
-FROM node:lts-alpine as build
+FROM node:10.15.3-alpine as build
 
 RUN apk update; \
   apk add git;
@@ -10,7 +10,7 @@ COPY . .
 RUN npm run build
 
 # Release stage
-FROM node:lts-alpine as release
+FROM node:10.15.3-alpine as release
 
 RUN apk update; \
   apk add git;
@@ -33,4 +33,5 @@ ENV PORT=1337
 USER node
 EXPOSE $PORT
 
+# ENTRYPOINT ["node", "--inspect=0.0.0.0:9229", "./bin/parse-server"]
 ENTRYPOINT ["node", "./bin/parse-server"]
