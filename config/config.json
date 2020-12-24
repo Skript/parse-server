@@ -1,7 +1,0 @@
-{
-    "appId": "app1",
-    "masterKey": "key1",
-    "databaseURI": "postgres://postgres:postgres@addicted-db:5432/addicted",
-    "cloud": "/Users/a.kartakov/project/parse-server/cloud/main.js",
-    "allowClientClassCreation": false
-}
