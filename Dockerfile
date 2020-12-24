@@ -1,5 +1,5 @@
 # Build stage
-FROM node:10.15.3-alpine as build
+FROM node:12.13.1-alpine as build
 
 RUN apk update; \
   apk add git;
@@ -10,7 +10,7 @@ COPY . .
 RUN npm run build
 
 # Release stage
-FROM node:10.15.3-alpine as release
+FROM node:12.13.1-alpine as release
 
 RUN apk update; \
   apk add git;
