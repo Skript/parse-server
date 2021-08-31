@@ -5,7 +5,7 @@ RUN apk update; \
   apk add git;
 WORKDIR /tmp
 COPY package*.json ./
-RUN npm ci
+RUN npm i
 COPY . .
 RUN npm run build
 
@@ -21,7 +21,7 @@ WORKDIR /parse-server
 
 COPY package*.json ./
 
-RUN npm ci --production --ignore-scripts
+RUN npm i --production --ignore-scripts
 
 COPY bin bin
 COPY public_html public_html
