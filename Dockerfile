@@ -34,4 +34,4 @@ USER node
 EXPOSE $PORT
 
 # ENTRYPOINT ["node", "--inspect=0.0.0.0:9229", "./bin/parse-server"]
-ENTRYPOINT ["node", "./bin/parse-server"]
+ENTRYPOINT ["node", "--prof", "./bin/parse-server"]
