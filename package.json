@@ -45,6 +45,7 @@
     "onesignal-node": "2.0.1",
     "mime": "2.4.4",
     "mongodb": "3.3.2",
+    "mongoose": "^5.13.7",
     "node-rsa": "1.0.7",
     "parse": "2.9.1",
     "pg-promise": "10.3.1",
