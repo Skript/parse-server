@@ -7,12 +7,14 @@ var Parse = require('parse/node').Parse;
 
 // Returns a promise that fulfills iff this user id is valid.
 function validateAuthData(authData, params) {
+  console.log(authData, params);
   return vkOAuth2Request(params).then(function (response) {
     if (response && response.access_token) {
       return request(
         'api.vk.com',
         'method/users.get?access_token=' + authData.access_token + '&v=' + params.apiVersion
       ).then(function (response) {
+        console.log(response);
         if (
           response &&
           response.response &&
