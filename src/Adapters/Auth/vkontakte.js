@@ -7,8 +7,8 @@ var Parse = require('parse/node').Parse;
 
 // Returns a promise that fulfills iff this user id is valid.
 function validateAuthData(authData, params) {
-  return vkOAuth2Request(params).then(function (response) {
-    if (response && response.access_token) {
+  return vkOAuth2Request(params).then(function () {
+    if (authData.access_token) {
       return request(
         'api.vk.com',
         'method/users.get?access_token=' + authData.access_token + '&v=' + params.apiVersion
@@ -24,7 +24,7 @@ function validateAuthData(authData, params) {
         throw new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Vk auth is invalid for this user.');
       });
     }
-    throw new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Vk appIds or appSecret is incorrect.');
+    throw new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Access token is not specified.');
   });
 }
 
@@ -46,17 +46,6 @@ function vkOAuth2Request(params) {
       params.apiVersion = '5.131';
     }
     resolve();
-  }).then(function () {
-    return request(
-      'oauth.vk.com',
-      'access_token?client_id=' +
-        params.appIds +
-        '&client_secret=' +
-        params.appSecret +
-        '&v=' +
-        params.apiVersion +
-        '&grant_type=client_credentials'
-    );
   });
 }
 
