@@ -215,7 +215,13 @@ export function getRequestObject(
     request.original = originalParseObject;
   }
 
-  if (triggerType === Types.beforeSave || triggerType === Types.afterSave) {
+  // Add context to Cloud Code Triggers beforeLogin
+  // https://github.com/parse-community/parse-server/pull/8724
+  if (
+    triggerType === Types.beforeSave ||
+    triggerType === Types.afterSave ||
+    triggerType === Types.beforeLogin
+  ) {
     // Set a copy of the context on the request object.
     request.context = Object.assign({}, context);
   }
@@ -231,6 +237,10 @@ export function getRequestObject(
   }
   if (auth.installationId) {
     request['installationId'] = auth.installationId;
+  }
+  // Add auth data to Cloud Code Triggers beforeLogin
+  if (auth.authData) {
+    request['authData'] = auth.authData;
   }
   return request;
 }
