@@ -243,13 +243,16 @@ export class UsersRouter extends ClassesRouter {
 
     req.config.filesController.expandFilesInObject(req.config, user);
 
+    // Add context to Cloud Code Triggers beforeLogin
+    // https://github.com/parse-community/parse-server/pull/8724
     // Before login trigger; throws if failure
     await maybeRunTrigger(
       TriggerTypes.beforeLogin,
       req.auth,
       Parse.User.fromJSON(Object.assign({ className: '_User' }, user)),
       null,
-      req.config
+      req.config,
+      req.info.context
     );
 
     const { sessionData, createSession } = Auth.createSession(req.config, {

@@ -294,7 +294,9 @@ RestWrite.prototype.runBeforeSaveTrigger = function() {
     });
 };
 
-RestWrite.prototype.runBeforeLoginTrigger = async function(userData) {
+// Add auth data to Cloud Code Triggers beforeLogin
+RestWrite.prototype.runBeforeLoginTrigger = async function(data) {
+  const { authData, userData } = data;
   // Avoid doing any setup for triggers if there is no 'beforeLogin' trigger
   if (
     !triggers.triggerExists(
@@ -309,6 +311,10 @@ RestWrite.prototype.runBeforeLoginTrigger = async function(userData) {
   // Cloud code gets a bit of extra data for its objects
   const extraData = { className: this.className };
   const user = triggers.inflate(extraData, userData);
+
+  if (authData) {
+    this.auth['authData'] = authData;
+  }
 
   // no need to return a response
   await triggers.maybeRunTrigger(
@@ -551,7 +557,8 @@ RestWrite.prototype.handleAuthData = function(authData) {
           // Run beforeLogin hook before storing any updates
           // to authData on the db; changes to userResult
           // will be ignored.
-          await this.runBeforeLoginTrigger(deepcopy(userResult));
+          // Add auth data to Cloud Code Triggers beforeLogin
+          await this.runBeforeLoginTrigger(deepcopy({ authData, userResult }));
         }
 
         // If we didn't change the auth data, just keep going
