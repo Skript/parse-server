@@ -1477,12 +1477,12 @@ RestWrite.prototype.runDatabaseOperation = function() {
       ACL[this.data.objectId] = { read: true, write: true };
       this.data.ACL = ACL;
       // password timestamp to be used when password expiry policy is enforced
-      if (
-        this.config.passwordPolicy &&
-        this.config.passwordPolicy.maxPasswordAge
-      ) {
-        this.data._password_changed_at = Parse._encode(new Date());
-      }
+      // if (
+      //   this.config.passwordPolicy &&
+      //   this.config.passwordPolicy.maxPasswordAge
+      // ) {
+      //   this.data._password_changed_at = Parse._encode(new Date());
+      // }
     }
 
     // Run a create
