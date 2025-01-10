@@ -207,36 +207,36 @@ export class UsersRouter extends ClassesRouter {
     const user = await this._authenticateUserFromRequest(req);
 
     // handle password expiry policy
-    if (req.config.passwordPolicy && req.config.passwordPolicy.maxPasswordAge) {
-      let changedAt = user._password_changed_at;
+    // if (req.config.passwordPolicy && req.config.passwordPolicy.maxPasswordAge) {
+    //   let changedAt = user._password_changed_at;
 
-      if (!changedAt) {
-        // password was created before expiry policy was enabled.
-        // simply update _User object so that it will start enforcing from now
-        changedAt = new Date();
-        req.config.database.update(
-          '_User',
-          { username: user.username },
-          { _password_changed_at: Parse._encode(changedAt) }
-        );
-      } else {
-        // check whether the password has expired
-        if (changedAt.__type == 'Date') {
-          changedAt = new Date(changedAt.iso);
-        }
-        // Calculate the expiry time.
-        const expiresAt = new Date(
-          changedAt.getTime() +
-            86400000 * req.config.passwordPolicy.maxPasswordAge
-        );
-        if (expiresAt < new Date())
-          // fail of current time is past password expiry time
-          throw new Parse.Error(
-            Parse.Error.OBJECT_NOT_FOUND,
-            'Your password has expired. Please reset your password.'
-          );
-      }
-    }
+    //   if (!changedAt) {
+    //     // password was created before expiry policy was enabled.
+    //     // simply update _User object so that it will start enforcing from now
+    //     changedAt = new Date();
+    //     req.config.database.update(
+    //       '_User',
+    //       { username: user.username },
+    //       { _password_changed_at: Parse._encode(changedAt) }
+    //     );
+    //   } else {
+    //     // check whether the password has expired
+    //     if (changedAt.__type == 'Date') {
+    //       changedAt = new Date(changedAt.iso);
+    //     }
+    //     // Calculate the expiry time.
+    //     const expiresAt = new Date(
+    //       changedAt.getTime() +
+    //         86400000 * req.config.passwordPolicy.maxPasswordAge
+    //     );
+    //     if (expiresAt < new Date())
+    //       // fail of current time is past password expiry time
+    //       throw new Parse.Error(
+    //         Parse.Error.OBJECT_NOT_FOUND,
+    //         'Your password has expired. Please reset your password.'
+    //       );
+    //   }
+    // }
 
     // Remove hidden properties.
     UsersRouter.removeHiddenProperties(user);
