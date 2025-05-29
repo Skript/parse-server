@@ -32,6 +32,12 @@ function parseParams(params) {
 export class FunctionsRouter extends PromiseRouter {
   mountRoutes() {
     this.route(
+      'GET',
+      '/get-functions/:functionName',
+      promiseEnsureIdempotency,
+      FunctionsRouter.handleCloudFunction
+    );
+    this.route(
       'POST',
       '/functions/:functionName',
       promiseEnsureIdempotency,
