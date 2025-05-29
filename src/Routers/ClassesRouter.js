@@ -21,6 +21,7 @@ export class ClassesRouter extends PromiseRouter {
   handleFind(req) {
     const body = Object.assign(req.body, ClassesRouter.JSONFromQuery(req.query));
     const options = ClassesRouter.optionsFromBody(body);
+    const isMaster = req.auth && req.auth.isMaster;
     if (req.config.maxLimit && body.limit > req.config.maxLimit) {
       // Silently replace the limit on the query with the max configured
       options.limit = Number(req.config.maxLimit);
@@ -30,6 +31,40 @@ export class ClassesRouter extends PromiseRouter {
     }
     if (typeof body.where === 'string') {
       body.where = JSON.parse(body.where);
+    }
+    if (!body.where) {
+      body.where = {};
+    }
+    if (this.className(req) === 'Category') {
+      if (!isMaster && !body.where.lang) {
+        body.where.lang = 'ru';
+      }
+    }
+    if (this.className(req) === 'Story') {
+      if (!isMaster && !body.where.objectId && !body.where.textId) {
+        const now = new Date();
+        if (!body.where.lang) {
+          body.where.lang = 'ru';
+        }
+        if (!body.where.releasedAt) {
+          body.where.releasedAt = { $lt: now };
+        }
+      }
+    }
+    if (this.className(req) === 'Episode') {
+      if (!isMaster && !body.where.objectId) {
+        const now = new Date();
+        if (!body.where.releasedAt) {
+          body.where.releasedAt = { $lt: now };
+        }
+        if (body.where.app_version) {
+          delete body.where.app_version;
+        } else {
+          if (!body.where.publishedAt) {
+            body.where.publishedAt = { $lt: now };
+          }
+        }
+      }
     }
     return rest
       .find(
