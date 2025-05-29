@@ -34,6 +34,24 @@ const anonymous = {
   },
 };
 
+const idfa = {
+  validateAuthData: () => {
+    return Promise.resolve();
+  },
+  validateAppId: () => {
+    return Promise.resolve();
+  },
+};
+
+const gaid = {
+  validateAuthData: () => {
+    return Promise.resolve();
+  },
+  validateAppId: () => {
+    return Promise.resolve();
+  },
+};
+
 const providers = {
   apple,
   gcenter,
@@ -59,6 +77,8 @@ const providers = {
   microsoft,
   keycloak,
   ldap,
+  idfa,
+  gaid,
 };
 
 function authDataValidator(adapter, appIds, options) {
