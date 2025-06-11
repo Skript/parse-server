@@ -7,10 +7,7 @@ function validateIdToken(id, token) {
     if (response && (response.sub == id || response.user_id == id)) {
       return;
     }
-    throw new Parse.Error(
-      Parse.Error.OBJECT_NOT_FOUND,
-      'Google auth is invalid for this user.'
-    );
+    throw new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Google auth is invalid for this user.');
   });
 }
 
@@ -19,10 +16,7 @@ function validateAuthToken(id, token) {
     if (response && (response.sub == id || response.user_id == id)) {
       return;
     }
-    throw new Parse.Error(
-      Parse.Error.OBJECT_NOT_FOUND,
-      'Google auth is invalid for this user.'
-    );
+    throw new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, 'Google auth is invalid for this user.');
   });
 }
 

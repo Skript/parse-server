@@ -2,6 +2,7 @@ import { loadAdapter } from '../Adapters/AdapterLoader';
 import { WSAdapter } from '../Adapters/WebSocketServer/WSAdapter';
 import logger from '../logger';
 import events from 'events';
+import { inspect } from 'util';
 
 export class ParseWebSocketServer {
   server: Object;
@@ -13,6 +14,10 @@ export class ParseWebSocketServer {
       logger.info('Parse LiveQuery Server starts running');
     };
     wss.onConnection = ws => {
+      ws.on('error', error => {
+        logger.error(error.message);
+        logger.error(inspect(ws, false));
+      });
       onConnect(new ParseWebSocket(ws));
       // Send ping to client periodically
       const pingIntervalId = setInterval(() => {

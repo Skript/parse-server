@@ -6,6 +6,7 @@ import AppCache from './cache';
 import SchemaCache from './Controllers/SchemaCache';
 import DatabaseController from './Controllers/DatabaseController';
 import net from 'net';
+import { IdempotencyOptions } from './Options/Definitions';
 
 function removeTrailingSlash(str) {
   if (!str) {
@@ -35,16 +36,14 @@ export class Config {
         config.database = new DatabaseController(
           cacheInfo.databaseController.adapter,
           schemaCache,
-          cacheInfo.skipMongoDBServer13732Workaround
+          config
         );
       } else {
         config[key] = cacheInfo[key];
       }
     });
     config.mount = removeTrailingSlash(mount);
-    config.generateSessionExpiresAt = config.generateSessionExpiresAt.bind(
-      config
-    );
+    config.generateSessionExpiresAt = config.generateSessionExpiresAt.bind(config);
     config.generateEmailVerifyTokenExpiresAt = config.generateEmailVerifyTokenExpiresAt.bind(
       config
     );
@@ -74,6 +73,9 @@ export class Config {
     masterKey,
     readOnlyMasterKey,
     allowHeaders,
+    idempotencyOptions,
+    emailVerifyTokenReuseIfValid,
+    requestKeywordDenylist,
   }) {
     if (masterKey === readOnlyMasterKey) {
       throw new Error('masterKey and readOnlyMasterKey should be different');
@@ -86,6 +88,7 @@ export class Config {
         appName,
         publicServerURL,
         emailVerifyTokenValidityDuration,
+        emailVerifyTokenReuseIfValid,
       });
     }
 
@@ -98,21 +101,42 @@ export class Config {
     }
 
     if (publicServerURL) {
-      if (
-        !publicServerURL.startsWith('http://') &&
-        !publicServerURL.startsWith('https://')
-      ) {
+      if (!publicServerURL.startsWith('http://') && !publicServerURL.startsWith('https://')) {
         throw 'publicServerURL should be a valid HTTPS URL starting with https://';
       }
     }
-
     this.validateSessionConfiguration(sessionLength, expireInactiveSessions);
-
     this.validateMasterKeyIps(masterKeyIps);
-
     this.validateMaxLimit(maxLimit);
-
     this.validateAllowHeaders(allowHeaders);
+    this.validateIdempotencyOptions(idempotencyOptions);
+    this.validateRequestKeywordDenylist(requestKeywordDenylist);
+  }
+
+  static validateRequestKeywordDenylist(requestKeywordDenylist) {
+    if (requestKeywordDenylist === undefined) {
+      requestKeywordDenylist = requestKeywordDenylist.default;
+    } else if (!Array.isArray(requestKeywordDenylist)) {
+      throw 'Parse Server option requestKeywordDenylist must be an array.';
+    }
+  }
+
+  static validateIdempotencyOptions(idempotencyOptions) {
+    if (!idempotencyOptions) {
+      return;
+    }
+    if (idempotencyOptions.ttl === undefined) {
+      idempotencyOptions.ttl = IdempotencyOptions.ttl.default;
+    } else if (!isNaN(idempotencyOptions.ttl) && idempotencyOptions.ttl <= 0) {
+      throw 'idempotency TTL value must be greater than 0 seconds';
+    } else if (isNaN(idempotencyOptions.ttl)) {
+      throw 'idempotency TTL value must be a number';
+    }
+    if (!idempotencyOptions.paths) {
+      idempotencyOptions.paths = IdempotencyOptions.paths.default;
+    } else if (!(idempotencyOptions.paths instanceof Array)) {
+      throw 'idempotency paths must be of an array of strings';
+    }
   }
 
   static validateAccountLockoutPolicy(accountLockout) {
@@ -139,8 +163,7 @@ export class Config {
     if (passwordPolicy) {
       if (
         passwordPolicy.maxPasswordAge !== undefined &&
-        (typeof passwordPolicy.maxPasswordAge !== 'number' ||
-          passwordPolicy.maxPasswordAge < 0)
+        (typeof passwordPolicy.maxPasswordAge !== 'number' || passwordPolicy.maxPasswordAge < 0)
       ) {
         throw 'passwordPolicy.maxPasswordAge must be a positive number';
       }
@@ -155,9 +178,7 @@ export class Config {
 
       if (passwordPolicy.validatorPattern) {
         if (typeof passwordPolicy.validatorPattern === 'string') {
-          passwordPolicy.validatorPattern = new RegExp(
-            passwordPolicy.validatorPattern
-          );
+          passwordPolicy.validatorPattern = new RegExp(passwordPolicy.validatorPattern);
         } else if (!(passwordPolicy.validatorPattern instanceof RegExp)) {
           throw 'passwordPolicy.validatorPattern must be a regex string or RegExp object.';
         }
@@ -185,6 +206,16 @@ export class Config {
       ) {
         throw 'passwordPolicy.maxPasswordHistory must be an integer ranging 0 - 20';
       }
+
+      if (
+        passwordPolicy.resetTokenReuseIfValid &&
+        typeof passwordPolicy.resetTokenReuseIfValid !== 'boolean'
+      ) {
+        throw 'resetTokenReuseIfValid must be a boolean value';
+      }
+      if (passwordPolicy.resetTokenReuseIfValid && !passwordPolicy.resetTokenValidityDuration) {
+        throw 'You cannot use resetTokenReuseIfValid without resetTokenValidityDuration';
+      }
     }
   }
 
@@ -202,6 +233,7 @@ export class Config {
     appName,
     publicServerURL,
     emailVerifyTokenValidityDuration,
+    emailVerifyTokenReuseIfValid,
   }) {
     if (!emailAdapter) {
       throw 'An emailAdapter is required for e-mail verification and password resets.';
@@ -218,6 +250,12 @@ export class Config {
       } else if (emailVerifyTokenValidityDuration <= 0) {
         throw 'Email verify token validity duration must be a value greater than 0.';
       }
+    }
+    if (emailVerifyTokenReuseIfValid && typeof emailVerifyTokenReuseIfValid !== 'boolean') {
+      throw 'emailVerifyTokenReuseIfValid must be a boolean value';
+    }
+    if (emailVerifyTokenReuseIfValid && !emailVerifyTokenValidityDuration) {
+      throw 'You cannot use emailVerifyTokenReuseIfValid without emailVerifyTokenValidityDuration';
     }
   }
 
@@ -278,22 +316,15 @@ export class Config {
       return undefined;
     }
     var now = new Date();
-    return new Date(
-      now.getTime() + this.emailVerifyTokenValidityDuration * 1000
-    );
+    return new Date(now.getTime() + this.emailVerifyTokenValidityDuration * 1000);
   }
 
   generatePasswordResetTokenExpiresAt() {
-    if (
-      !this.passwordPolicy ||
-      !this.passwordPolicy.resetTokenValidityDuration
-    ) {
+    if (!this.passwordPolicy || !this.passwordPolicy.resetTokenValidityDuration) {
       return undefined;
     }
     const now = new Date();
-    return new Date(
-      now.getTime() + this.passwordPolicy.resetTokenValidityDuration * 1000
-    );
+    return new Date(now.getTime() + this.passwordPolicy.resetTokenValidityDuration * 1000);
   }
 
   generateSessionExpiresAt() {
@@ -305,10 +336,7 @@ export class Config {
   }
 
   get invalidLinkURL() {
-    return (
-      this.customPages.invalidLink ||
-      `${this.publicServerURL}/apps/invalid_link.html`
-    );
+    return this.customPages.invalidLink || `${this.publicServerURL}/apps/invalid_link.html`;
   }
 
   get invalidVerificationLinkURL() {
@@ -320,16 +348,12 @@ export class Config {
 
   get linkSendSuccessURL() {
     return (
-      this.customPages.linkSendSuccess ||
-      `${this.publicServerURL}/apps/link_send_success.html`
+      this.customPages.linkSendSuccess || `${this.publicServerURL}/apps/link_send_success.html`
     );
   }
 
   get linkSendFailURL() {
-    return (
-      this.customPages.linkSendFail ||
-      `${this.publicServerURL}/apps/link_send_fail.html`
-    );
+    return this.customPages.linkSendFail || `${this.publicServerURL}/apps/link_send_fail.html`;
   }
 
   get verifyEmailSuccessURL() {
@@ -340,10 +364,7 @@ export class Config {
   }
 
   get choosePasswordURL() {
-    return (
-      this.customPages.choosePassword ||
-      `${this.publicServerURL}/apps/choose_password`
-    );
+    return this.customPages.choosePassword || `${this.publicServerURL}/apps/choose_password`;
   }
 
   get requestResetPasswordURL() {

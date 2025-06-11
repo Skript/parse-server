@@ -2,6 +2,7 @@ const Parse = require('parse/node').Parse;
 const PostgresStorageAdapter = require('../lib/Adapters/Storage/Postgres/PostgresStorageAdapter')
   .default;
 const postgresURI =
+  process.env.PARSE_SERVER_TEST_DATABASE_URI ||
   'postgres://localhost:5432/parse_server_postgres_adapter_test_database';
 const ParseServer = require('../lib/index');
 const express = require('express');
@@ -82,8 +83,6 @@ describe_only_db('postgres')('Postgres database init options', () => {
       databaseOptions: databaseOptions2,
     });
 
-    createParseServer({ databaseAdapter: adapter }).then(done.fail, () =>
-      done()
-    );
+    createParseServer({ databaseAdapter: adapter }).then(done.fail, () => done());
   });
 });

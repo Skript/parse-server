@@ -1,8 +1,7 @@
 const MongoClient = require('mongodb').MongoClient;
 const GridStore = require('mongodb').GridStore;
 
-const GridStoreAdapter = require('../lib/Adapters/Files/GridStoreAdapter')
-  .GridStoreAdapter;
+const GridStoreAdapter = require('../lib/Adapters/Files/GridStoreAdapter').GridStoreAdapter;
 const Config = require('../lib/Config');
 const FilesController = require('../lib/Controllers/FilesController').default;
 
@@ -14,11 +13,7 @@ describe_only_db('mongo')('GridStoreAdapter', () => {
     const gridStoreAdapter = new GridStoreAdapter(databaseURI);
     const db = await gridStoreAdapter._connect();
     await db.dropDatabase();
-    const filesController = new FilesController(
-      gridStoreAdapter,
-      Parse.applicationId,
-      {}
-    );
+    const filesController = new FilesController(gridStoreAdapter, Parse.applicationId, {});
 
     // save original unlink before redefinition
     const originalUnlink = GridStore.prototype.unlink;
@@ -26,7 +21,7 @@ describe_only_db('mongo')('GridStoreAdapter', () => {
     let gridStoreMode;
 
     // new unlink method that will capture the mode in which GridStore was opened
-    GridStore.prototype.unlink = function() {
+    GridStore.prototype.unlink = function () {
       // restore original unlink during first call
       GridStore.prototype.unlink = originalUnlink;
 
@@ -97,18 +92,20 @@ describe_only_db('mongo')('GridStoreAdapter', () => {
       .catch(fail);
   });
 
-  it('handleShutdown, close connection', done => {
+  it('handleShutdown, close connection', async () => {
     const databaseURI = 'mongodb://localhost:27017/parse';
     const gridStoreAdapter = new GridStoreAdapter(databaseURI);
 
-    gridStoreAdapter._connect().then(db => {
-      expect(db.serverConfig.connections().length > 0).toEqual(true);
-      expect(db.serverConfig.s.connected).toEqual(true);
-      gridStoreAdapter.handleShutdown().then(() => {
-        expect(db.serverConfig.connections().length > 0).toEqual(false);
-        expect(db.serverConfig.s.connected).toEqual(false);
-        done();
-      });
-    });
+    const db = await gridStoreAdapter._connect();
+    const status = await db.admin().serverStatus();
+    expect(status.connections.current > 0).toEqual(true);
+
+    await gridStoreAdapter.handleShutdown();
+    try {
+      await db.admin().serverStatus();
+      expect(false).toBe(true);
+    } catch (e) {
+      expect(e.message).toEqual('topology was destroyed');
+    }
   });
 });
