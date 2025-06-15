@@ -17,10 +17,20 @@ module.exports.ParseServerOptions = {
     action: parsers.booleanParser,
     default: true,
   },
+  allowCustomObjectId: {
+    env: 'PARSE_SERVER_ALLOW_CUSTOM_OBJECT_ID',
+    help: 'Enable (or disable) custom objectId',
+    action: parsers.booleanParser,
+    default: false,
+  },
   allowHeaders: {
     env: 'PARSE_SERVER_ALLOW_HEADERS',
     help: 'Add headers to Access-Control-Allow-Headers',
     action: parsers.arrayParser,
+  },
+  allowOrigin: {
+    env: 'PARSE_SERVER_ALLOW_ORIGIN',
+    help: 'Sets the origin to Access-Control-Allow-Origin',
   },
   analyticsAdapter: {
     env: 'PARSE_SERVER_ANALYTICS_ADAPTER',
@@ -55,8 +65,7 @@ module.exports.ParseServerOptions = {
   },
   cacheTTL: {
     env: 'PARSE_SERVER_CACHE_TTL',
-    help:
-      'Sets the TTL for the in memory cache (in ms), defaults to 5000 (5 seconds)',
+    help: 'Sets the TTL for the in memory cache (in ms), defaults to 5000 (5 seconds)',
     action: parsers.numberParser('cacheTTL'),
     default: 5000,
   },
@@ -70,8 +79,7 @@ module.exports.ParseServerOptions = {
   },
   cluster: {
     env: 'PARSE_SERVER_CLUSTER',
-    help:
-      'Run with cluster, optionally set the number of processes default to os.cpus().length',
+    help: 'Run with cluster, optionally set the number of processes default to os.cpus().length',
     action: parsers.numberOrBooleanParser,
   },
   collectionPrefix: {
@@ -97,8 +105,7 @@ module.exports.ParseServerOptions = {
   },
   databaseURI: {
     env: 'PARSE_SERVER_DATABASE_URI',
-    help:
-      'The full URI to your database. Supported databases are mongodb or postgres.',
+    help: 'The full URI to your database. Supported databases are mongodb or postgres.',
     required: true,
     default: 'mongodb://localhost:27017/parse',
   },
@@ -118,6 +125,13 @@ module.exports.ParseServerOptions = {
     help: 'Adapter module for email sending',
     action: parsers.moduleOrObjectParser,
   },
+  emailVerifyTokenReuseIfValid: {
+    env: 'PARSE_SERVER_EMAIL_VERIFY_TOKEN_REUSE_IF_VALID',
+    help:
+      'an existing email verify token should be reused when resend verification email is requested',
+    action: parsers.booleanParser,
+    default: false,
+  },
   emailVerifyTokenValidityDuration: {
     env: 'PARSE_SERVER_EMAIL_VERIFY_TOKEN_VALIDITY_DURATION',
     help: 'Email verification token validity duration, in seconds',
@@ -125,7 +139,7 @@ module.exports.ParseServerOptions = {
   },
   enableAnonymousUsers: {
     env: 'PARSE_SERVER_ENABLE_ANON_USERS',
-    help: 'Enable (or disable) anon users, defaults to true',
+    help: 'Enable (or disable) anonymous users, defaults to true',
     action: parsers.booleanParser,
     default: true,
   },
@@ -142,10 +156,13 @@ module.exports.ParseServerOptions = {
     action: parsers.booleanParser,
     default: false,
   },
+  encryptionKey: {
+    env: 'PARSE_SERVER_ENCRYPTION_KEY',
+    help: 'Key for encrypting your files',
+  },
   expireInactiveSessions: {
     env: 'PARSE_SERVER_EXPIRE_INACTIVE_SESSIONS',
-    help:
-      'Sets wether we should expire the inactive sessions, defaults to true',
+    help: 'Sets wether we should expire the inactive sessions, defaults to true',
     action: parsers.booleanParser,
     default: true,
   },
@@ -172,6 +189,13 @@ module.exports.ParseServerOptions = {
     help: 'The host to serve ParseServer on, defaults to 0.0.0.0',
     default: '0.0.0.0',
   },
+  idempotencyOptions: {
+    env: 'PARSE_SERVER_EXPERIMENTAL_IDEMPOTENCY_OPTIONS',
+    help:
+      'Options for request idempotency to deduplicate identical requests that may be caused by network issues. Caution, this is an experimental feature that may not be appropriate for production.',
+    action: parsers.objectParser,
+    default: {},
+  },
   javascriptKey: {
     env: 'PARSE_SERVER_JAVASCRIPT_KEY',
     help: 'Key for the Javascript SDK',
@@ -188,8 +212,7 @@ module.exports.ParseServerOptions = {
   },
   liveQueryServerOptions: {
     env: 'PARSE_SERVER_LIVE_QUERY_SERVER_OPTIONS',
-    help:
-      'Live query server configuration options (will start the liveQuery server)',
+    help: 'Live query server configuration options (will start the liveQuery server)',
     action: parsers.objectParser,
   },
   loggerAdapter: {
@@ -203,8 +226,7 @@ module.exports.ParseServerOptions = {
   },
   logsFolder: {
     env: 'PARSE_SERVER_LOGS_FOLDER',
-    help:
-      "Folder for the logs (defaults to './logs'); set to null to disable file based logging",
+    help: "Folder for the logs (defaults to './logs'); set to null to disable file based logging",
     default: './logs',
   },
   masterKey: {
@@ -214,8 +236,7 @@ module.exports.ParseServerOptions = {
   },
   masterKeyIps: {
     env: 'PARSE_SERVER_MASTER_KEY_IPS',
-    help:
-      'Restrict masterKey to be used by only these ips, defaults to [] (allow all ips)',
+    help: 'Restrict masterKey to be used by only these ips, defaults to [] (allow all ips)',
     action: parsers.arrayParser,
     default: [],
   },
@@ -223,6 +244,12 @@ module.exports.ParseServerOptions = {
     env: 'PARSE_SERVER_MAX_LIMIT',
     help: 'Max value for limit option on queries, defaults to unlimited',
     action: parsers.numberParser('maxLimit'),
+  },
+  maxLogFiles: {
+    env: 'PARSE_SERVER_MAX_LOG_FILES',
+    help:
+      "Maximum number of logs to keep. If not set, no logs will be removed. This can be a number of files or number of days. If using days, add 'd' as the suffix. (default: null)",
+    action: parsers.objectParser,
   },
   maxUploadSize: {
     env: 'PARSE_SERVER_MAX_UPLOAD_SIZE',
@@ -287,8 +314,7 @@ module.exports.ParseServerOptions = {
   },
   protectedFields: {
     env: 'PARSE_SERVER_PROTECTED_FIELDS',
-    help:
-      'Protected fields that should be treated with extra security when fetching details.',
+    help: 'Protected fields that should be treated with extra security when fetching details.',
     action: parsers.objectParser,
     default: {
       _User: {
@@ -308,8 +334,25 @@ module.exports.ParseServerOptions = {
   },
   readOnlyMasterKey: {
     env: 'PARSE_SERVER_READ_ONLY_MASTER_KEY',
+    help: 'Read-only key, which has the same capabilities as MasterKey without writes',
+  },
+  requestKeywordDenylist: {
+    env: 'PARSE_SERVER_REQUEST_KEYWORD_DENYLIST',
     help:
-      'Read-only key, which has the same capabilities as MasterKey without writes',
+      'An array of keys and values that are prohibited in database read and write requests to prevent potential security vulnerabilities. It is possible to specify only a key (`{"key":"..."}`), only a value (`{"value":"..."}`) or a key-value pair (`{"key":"...","value":"..."}`). The specification can use the following types: `boolean`, `numeric` or `string`, where `string` will be interpreted as a regex notation. Request data is deep-scanned for matching definitions to detect also any nested occurrences. Defaults are patterns that are likely to be used in malicious requests. Setting this option will override the default patterns.',
+    action: parsers.arrayParser,
+    default: [
+      {
+        key: '_bsontype',
+        value: 'Code',
+      },
+      {
+        key: 'constructor',
+      },
+      {
+        key: '__proto__',
+      },
+    ],
   },
   restAPIKey: {
     env: 'PARSE_SERVER_REST_API_KEY',
@@ -358,12 +401,6 @@ module.exports.ParseServerOptions = {
     env: 'SILENT',
     help: 'Disables console output',
     action: parsers.booleanParser,
-  },
-  skipMongoDBServer13732Workaround: {
-    env: 'PARSE_SKIP_MONGODB_SERVER_13732_WORKAROUND',
-    help: 'Circumvent Parse workaround for historical MongoDB bug SERVER-13732',
-    action: parsers.booleanParser,
-    default: false,
   },
   startLiveQueryServer: {
     env: 'PARSE_SERVER_START_LIVE_QUERY_SERVER',
@@ -461,7 +498,7 @@ module.exports.LiveQueryServerOptions = {
   cacheTimeout: {
     env: 'PARSE_LIVE_QUERY_SERVER_CACHE_TIMEOUT',
     help:
-      "Number in milliseconds. When clients provide the sessionToken to the LiveQuery server, the LiveQuery server will try to fetch its ParseUser's objectId from parse server and store it in the cache. The value defines the duration of the cache. Check the following Security section and our protocol specification for details, defaults to 30 * 24 * 60 * 60 * 1000 ms (~30 days).",
+      "Number in milliseconds. When clients provide the sessionToken to the LiveQuery server, the LiveQuery server will try to fetch its ParseUser's objectId from parse server and store it in the cache. The value defines the duration of the cache. Check the following Security section and our protocol specification for details, defaults to 5 * 1000 ms (5 seconds).",
     action: parsers.numberParser('cacheTimeout'),
   },
   keyPairs: {
@@ -515,5 +552,69 @@ module.exports.LiveQueryServerOptions = {
     env: 'PARSE_LIVE_QUERY_SERVER_WSS_ADAPTER',
     help: 'Adapter module for the WebSocketServer',
     action: parsers.moduleOrObjectParser,
+  },
+};
+module.exports.IdempotencyOptions = {
+  paths: {
+    env: 'PARSE_SERVER_EXPERIMENTAL_IDEMPOTENCY_PATHS',
+    help:
+      'An array of paths for which the feature should be enabled. The mount path must not be included, for example instead of `/parse/functions/myFunction` specifiy `functions/myFunction`. The entries are interpreted as regular expression, for example `functions/.*` matches all functions, `jobs/.*` matches all jobs, `classes/.*` matches all classes, `.*` matches all paths.',
+    action: parsers.arrayParser,
+    default: [],
+  },
+  ttl: {
+    env: 'PARSE_SERVER_EXPERIMENTAL_IDEMPOTENCY_TTL',
+    help:
+      'The duration in seconds after which a request record is discarded from the database, defaults to 300s.',
+    action: parsers.numberParser('ttl'),
+    default: 300,
+  },
+};
+module.exports.AccountLockoutOptions = {
+  duration: {
+    env: 'PARSE_SERVER_ACCOUNT_LOCKOUT_DURATION',
+    help:
+      'number of minutes that a locked-out account remains locked out before automatically becoming unlocked.',
+    action: parsers.numberParser('duration'),
+  },
+  threshold: {
+    env: 'PARSE_SERVER_ACCOUNT_LOCKOUT_THRESHOLD',
+    help: 'number of failed sign-in attempts that will cause a user account to be locked',
+    action: parsers.numberParser('threshold'),
+  },
+};
+module.exports.PasswordPolicyOptions = {
+  doNotAllowUsername: {
+    env: 'PARSE_SERVER_PASSWORD_POLICY_DO_NOT_ALLOW_USERNAME',
+    help: 'disallow username in passwords',
+    action: parsers.booleanParser,
+  },
+  maxPasswordAge: {
+    env: 'PARSE_SERVER_PASSWORD_POLICY_MAX_PASSWORD_AGE',
+    help: 'days for password expiry',
+    action: parsers.numberParser('maxPasswordAge'),
+  },
+  maxPasswordHistory: {
+    env: 'PARSE_SERVER_PASSWORD_POLICY_MAX_PASSWORD_HISTORY',
+    help: 'setting to prevent reuse of previous n passwords',
+    action: parsers.numberParser('maxPasswordHistory'),
+  },
+  resetTokenReuseIfValid: {
+    env: 'PARSE_SERVER_PASSWORD_POLICY_RESET_TOKEN_REUSE_IF_VALID',
+    help: "resend token if it's still valid",
+    action: parsers.booleanParser,
+  },
+  resetTokenValidityDuration: {
+    env: 'PARSE_SERVER_PASSWORD_POLICY_RESET_TOKEN_VALIDITY_DURATION',
+    help: 'time for token to expire',
+    action: parsers.numberParser('resetTokenValidityDuration'),
+  },
+  validatorCallback: {
+    env: 'PARSE_SERVER_PASSWORD_POLICY_VALIDATOR_CALLBACK',
+    help: 'a callback function to be invoked to validate the password',
+  },
+  validatorPattern: {
+    env: 'PARSE_SERVER_PASSWORD_POLICY_VALIDATOR_PATTERN',
+    help: 'a RegExp object or a regex string representing the pattern to enforce',
   },
 };

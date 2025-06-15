@@ -1,10 +1,8 @@
 import { GraphQLNonNull } from 'graphql';
+import { fromGlobalId, mutationWithClientMutationId } from 'graphql-relay';
 import getFieldNames from 'graphql-list-fields';
 import * as defaultGraphQLTypes from './defaultGraphQLTypes';
-import {
-  extractKeysAndInclude,
-  getParseClassMutationConfig,
-} from '../parseGraphQLUtils';
+import { extractKeysAndInclude, getParseClassMutationConfig } from '../parseGraphQLUtils';
 import * as objectsMutations from '../helpers/objectsMutations';
 import * as objectsQueries from '../helpers/objectsQueries';
 import { ParseGraphQLClassConfig } from '../../Controllers/ParseGraphQLController';
@@ -17,13 +15,10 @@ const getOnlyRequiredFields = (
   includedFieldsString,
   nativeObjectFields
 ) => {
-  const includedFields = includedFieldsString.split(',');
-  const selectedFields = selectedFieldsString.split(',');
+  const includedFields = includedFieldsString ? includedFieldsString.split(',') : [];
+  const selectedFields = selectedFieldsString ? selectedFieldsString.split(',') : [];
   const missingFields = selectedFields
-    .filter(
-      field =>
-        !nativeObjectFields.includes(field) || includedFields.includes(field)
-    )
+    .filter(field => !nativeObjectFields.includes(field) || includedFields.includes(field))
     .join(',');
   if (!missingFields.length) {
     return { needGet: false, keys: '' };
@@ -32,18 +27,18 @@ const getOnlyRequiredFields = (
   }
 };
 
-const load = function(
-  parseGraphQLSchema,
-  parseClass,
-  parseClassConfig: ?ParseGraphQLClassConfig
-) {
+const load = function (parseGraphQLSchema, parseClass, parseClassConfig: ?ParseGraphQLClassConfig) {
   const className = parseClass.className;
   const graphQLClassName = transformClassNameToGraphQL(className);
+  const getGraphQLQueryName = graphQLClassName.charAt(0).toLowerCase() + graphQLClassName.slice(1);
 
   const {
     create: isCreateEnabled = true,
     update: isUpdateEnabled = true,
     destroy: isDestroyEnabled = true,
+    createAlias: createAlias = '',
+    updateAlias: updateAlias = '',
+    destroyAlias: destroyAlias = '',
   } = getParseClassMutationConfig(parseClassConfig);
 
   const {
@@ -53,19 +48,23 @@ const load = function(
   } = parseGraphQLSchema.parseClassTypes[className];
 
   if (isCreateEnabled) {
-    const createGraphQLMutationName = `create${graphQLClassName}`;
-    parseGraphQLSchema.addGraphQLMutation(createGraphQLMutationName, {
+    const createGraphQLMutationName = createAlias || `create${graphQLClassName}`;
+    const createGraphQLMutation = mutationWithClientMutationId({
+      name: `Create${graphQLClassName}`,
       description: `The ${createGraphQLMutationName} mutation can be used to create a new object of the ${graphQLClassName} class.`,
-      args: {
+      inputFields: {
         fields: {
-          description: 'These are the fields used to create the object.',
+          description: 'These are the fields that will be used to create the new object.',
           type: classGraphQLCreateType || defaultGraphQLTypes.OBJECT,
         },
       },
-      type: new GraphQLNonNull(
-        classGraphQLOutputType || defaultGraphQLTypes.OBJECT
-      ),
-      async resolve(_source, args, context, mutationInfo) {
+      outputFields: {
+        [getGraphQLQueryName]: {
+          description: 'This is the created object.',
+          type: new GraphQLNonNull(classGraphQLOutputType || defaultGraphQLTypes.OBJECT),
+        },
+      },
+      mutateAndGetPayload: async (args, context, mutationInfo) => {
         try {
           let { fields } = args;
           if (!fields) fields = {};
@@ -84,16 +83,23 @@ const load = function(
             auth,
             info
           );
-          const selectedFields = getFieldNames(mutationInfo);
+          const selectedFields = getFieldNames(mutationInfo)
+            .filter(field => field.startsWith(`${getGraphQLQueryName}.`))
+            .map(field => field.replace(`${getGraphQLQueryName}.`, ''));
           const { keys, include } = extractKeysAndInclude(selectedFields);
-          const { keys: requiredKeys, needGet } = getOnlyRequiredFields(
-            fields,
+          const { keys: requiredKeys, needGet } = getOnlyRequiredFields(fields, keys, include, [
+            'id',
+            'objectId',
+            'createdAt',
+            'updatedAt',
+          ]);
+          const needToGetAllKeys = objectsQueries.needToGetAllKeys(
+            parseClass.fields,
             keys,
-            include,
-            ['id', 'createdAt', 'updatedAt']
+            parseGraphQLSchema.parseClasses
           );
           let optimizedObject = {};
-          if (needGet) {
+          if (needGet && !needToGetAllKeys) {
             optimizedObject = await objectsQueries.getObject(
               className,
               createdObject.objectId,
@@ -103,40 +109,74 @@ const load = function(
               undefined,
               config,
               auth,
-              info
+              info,
+              parseGraphQLSchema.parseClasses
+            );
+          } else if (needToGetAllKeys) {
+            optimizedObject = await objectsQueries.getObject(
+              className,
+              createdObject.objectId,
+              undefined,
+              include,
+              undefined,
+              undefined,
+              config,
+              auth,
+              info,
+              parseGraphQLSchema.parseClasses
             );
           }
           return {
-            ...createdObject,
-            updatedAt: createdObject.createdAt,
-            ...parseFields,
-            ...optimizedObject,
+            [getGraphQLQueryName]: {
+              ...createdObject,
+              updatedAt: createdObject.createdAt,
+              ...parseFields,
+              ...optimizedObject,
+            },
           };
         } catch (e) {
           parseGraphQLSchema.handleError(e);
         }
       },
     });
+
+    if (
+      parseGraphQLSchema.addGraphQLType(createGraphQLMutation.args.input.type.ofType) &&
+      parseGraphQLSchema.addGraphQLType(createGraphQLMutation.type)
+    ) {
+      parseGraphQLSchema.addGraphQLMutation(createGraphQLMutationName, createGraphQLMutation);
+    }
   }
 
   if (isUpdateEnabled) {
-    const updateGraphQLMutationName = `update${graphQLClassName}`;
-    parseGraphQLSchema.addGraphQLMutation(updateGraphQLMutationName, {
+    const updateGraphQLMutationName = updateAlias || `update${graphQLClassName}`;
+    const updateGraphQLMutation = mutationWithClientMutationId({
+      name: `Update${graphQLClassName}`,
       description: `The ${updateGraphQLMutationName} mutation can be used to update an object of the ${graphQLClassName} class.`,
-      args: {
-        id: defaultGraphQLTypes.OBJECT_ID_ATT,
+      inputFields: {
+        id: defaultGraphQLTypes.GLOBAL_OR_OBJECT_ID_ATT,
         fields: {
-          description: 'These are the fields used to update the object.',
+          description: 'These are the fields that will be used to update the object.',
           type: classGraphQLUpdateType || defaultGraphQLTypes.OBJECT,
         },
       },
-      type: new GraphQLNonNull(
-        classGraphQLOutputType || defaultGraphQLTypes.OBJECT
-      ),
-      async resolve(_source, args, context, mutationInfo) {
+      outputFields: {
+        [getGraphQLQueryName]: {
+          description: 'This is the updated object.',
+          type: new GraphQLNonNull(classGraphQLOutputType || defaultGraphQLTypes.OBJECT),
+        },
+      },
+      mutateAndGetPayload: async (args, context, mutationInfo) => {
         try {
-          const { id, fields } = args;
+          let { id, fields } = args;
+          if (!fields) fields = {};
           const { config, auth, info } = context;
+
+          const globalIdObject = fromGlobalId(id);
+
+          if (globalIdObject.type === className) {
+            id = globalIdObject.id;
+          }
 
           const parseFields = await transformTypes('update', fields, {
             className,
@@ -153,17 +193,22 @@ const load = function(
             info
           );
 
-          const selectedFields = getFieldNames(mutationInfo);
+          const selectedFields = getFieldNames(mutationInfo)
+            .filter(field => field.startsWith(`${getGraphQLQueryName}.`))
+            .map(field => field.replace(`${getGraphQLQueryName}.`, ''));
           const { keys, include } = extractKeysAndInclude(selectedFields);
-
-          const { keys: requiredKeys, needGet } = getOnlyRequiredFields(
-            fields,
+          const { keys: requiredKeys, needGet } = getOnlyRequiredFields(fields, keys, include, [
+            'id',
+            'objectId',
+            'updatedAt',
+          ]);
+          const needToGetAllKeys = objectsQueries.needToGetAllKeys(
+            parseClass.fields,
             keys,
-            include,
-            ['id', 'updatedAt']
+            parseGraphQLSchema.parseClasses
           );
           let optimizedObject = {};
-          if (needGet) {
+          if (needGet && !needToGetAllKeys) {
             optimizedObject = await objectsQueries.getObject(
               className,
               id,
@@ -173,42 +218,76 @@ const load = function(
               undefined,
               config,
               auth,
-              info
+              info,
+              parseGraphQLSchema.parseClasses
+            );
+          } else if (needToGetAllKeys) {
+            optimizedObject = await objectsQueries.getObject(
+              className,
+              id,
+              undefined,
+              include,
+              undefined,
+              undefined,
+              config,
+              auth,
+              info,
+              parseGraphQLSchema.parseClasses
             );
           }
           return {
-            id,
-            ...updatedObject,
-            ...parseFields,
-            ...optimizedObject,
+            [getGraphQLQueryName]: {
+              objectId: id,
+              ...updatedObject,
+              ...parseFields,
+              ...optimizedObject,
+            },
           };
         } catch (e) {
           parseGraphQLSchema.handleError(e);
         }
       },
     });
+
+    if (
+      parseGraphQLSchema.addGraphQLType(updateGraphQLMutation.args.input.type.ofType) &&
+      parseGraphQLSchema.addGraphQLType(updateGraphQLMutation.type)
+    ) {
+      parseGraphQLSchema.addGraphQLMutation(updateGraphQLMutationName, updateGraphQLMutation);
+    }
   }
 
   if (isDestroyEnabled) {
-    const deleteGraphQLMutationName = `delete${graphQLClassName}`;
-    parseGraphQLSchema.addGraphQLMutation(deleteGraphQLMutationName, {
+    const deleteGraphQLMutationName = destroyAlias || `delete${graphQLClassName}`;
+    const deleteGraphQLMutation = mutationWithClientMutationId({
+      name: `Delete${graphQLClassName}`,
       description: `The ${deleteGraphQLMutationName} mutation can be used to delete an object of the ${graphQLClassName} class.`,
-      args: {
-        id: defaultGraphQLTypes.OBJECT_ID_ATT,
+      inputFields: {
+        id: defaultGraphQLTypes.GLOBAL_OR_OBJECT_ID_ATT,
       },
-      type: new GraphQLNonNull(
-        classGraphQLOutputType || defaultGraphQLTypes.OBJECT
-      ),
-      async resolve(_source, args, context, mutationInfo) {
+      outputFields: {
+        [getGraphQLQueryName]: {
+          description: 'This is the deleted object.',
+          type: new GraphQLNonNull(classGraphQLOutputType || defaultGraphQLTypes.OBJECT),
+        },
+      },
+      mutateAndGetPayload: async (args, context, mutationInfo) => {
         try {
-          const { id } = args;
+          let { id } = args;
           const { config, auth, info } = context;
-          const selectedFields = getFieldNames(mutationInfo);
-          const { keys, include } = extractKeysAndInclude(selectedFields);
 
+          const globalIdObject = fromGlobalId(id);
+
+          if (globalIdObject.type === className) {
+            id = globalIdObject.id;
+          }
+
+          const selectedFields = getFieldNames(mutationInfo)
+            .filter(field => field.startsWith(`${getGraphQLQueryName}.`))
+            .map(field => field.replace(`${getGraphQLQueryName}.`, ''));
+          const { keys, include } = extractKeysAndInclude(selectedFields);
           let optimizedObject = {};
-          const splitedKeys = keys.split(',');
-          if (splitedKeys.length > 1 || splitedKeys[0] !== 'id') {
+          if (keys && keys.split(',').filter(key => !['id', 'objectId'].includes(key)).length > 0) {
             optimizedObject = await objectsQueries.getObject(
               className,
               id,
@@ -218,22 +297,29 @@ const load = function(
               undefined,
               config,
               auth,
-              info
+              info,
+              parseGraphQLSchema.parseClasses
             );
           }
-          await objectsMutations.deleteObject(
-            className,
-            id,
-            config,
-            auth,
-            info
-          );
-          return { id, ...optimizedObject };
+          await objectsMutations.deleteObject(className, id, config, auth, info);
+          return {
+            [getGraphQLQueryName]: {
+              objectId: id,
+              ...optimizedObject,
+            },
+          };
         } catch (e) {
           parseGraphQLSchema.handleError(e);
         }
       },
     });
+
+    if (
+      parseGraphQLSchema.addGraphQLType(deleteGraphQLMutation.args.input.type.ofType) &&
+      parseGraphQLSchema.addGraphQLType(deleteGraphQLMutation.type)
+    ) {
+      parseGraphQLSchema.addGraphQLMutation(deleteGraphQLMutationName, deleteGraphQLMutation);
+    }
   }
 };
 

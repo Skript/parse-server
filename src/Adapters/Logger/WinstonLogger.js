@@ -20,11 +20,7 @@ function configureTransports(options) {
             {
               filename: 'parse-server.info',
               json: true,
-              format: format.combine(
-                format.timestamp(),
-                format.splat(),
-                format.json()
-              ),
+              format: format.combine(format.timestamp(), format.splat(), format.json()),
             },
             options
           )
@@ -37,11 +33,7 @@ function configureTransports(options) {
             {
               filename: 'parse-server.err',
               json: true,
-              format: format.combine(
-                format.timestamp(),
-                format.splat(),
-                format.json()
-              ),
+              format: format.combine(format.timestamp(), format.splat(), format.json()),
             },
             options,
             { level: 'error' }
@@ -79,6 +71,7 @@ export function configureLogger({
   logLevel = winston.level,
   verbose = defaults.verbose,
   silent = defaults.silent,
+  maxLogFiles,
 } = {}) {
   if (verbose) {
     logLevel = 'verbose';
@@ -100,6 +93,7 @@ export function configureLogger({
   options.dirname = logsFolder;
   options.level = logLevel;
   options.silent = silent;
+  options.maxFiles = maxLogFiles;
 
   if (jsonLogs) {
     options.json = true;
@@ -118,9 +112,7 @@ export function addTransport(transport) {
 
 export function removeTransport(transport) {
   const matchingTransport = logger.transports.find(t1 => {
-    return typeof transport === 'string'
-      ? t1.name === transport
-      : t1 === transport;
+    return typeof transport === 'string' ? t1.name === transport : t1 === transport;
   });
 
   if (matchingTransport) {

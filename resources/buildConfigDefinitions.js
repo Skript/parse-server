@@ -40,17 +40,17 @@ function getCommentValue(comment) {
 }
 
 function getENVPrefix(iface) {
-  if (iface.id.name === 'ParseServerOptions') {
-    return 'PARSE_SERVER_';
+  const options = {
+    'ParseServerOptions' : 'PARSE_SERVER_',
+    'CustomPagesOptions' : 'PARSE_SERVER_CUSTOM_PAGES_',
+    'LiveQueryServerOptions' : 'PARSE_LIVE_QUERY_SERVER_',
+    'LiveQueryOptions' : 'PARSE_SERVER_LIVEQUERY_',
+    'IdempotencyOptions' : 'PARSE_SERVER_EXPERIMENTAL_IDEMPOTENCY_',
+    'AccountLockoutOptions' : 'PARSE_SERVER_ACCOUNT_LOCKOUT_',
+    'PasswordPolicyOptions' : 'PARSE_SERVER_PASSWORD_POLICY_'
   }
-  if (iface.id.name === 'CustomPagesOptions') {
-    return 'PARSE_SERVER_CUSTOM_PAGES_';
-  }
-  if (iface.id.name === 'LiveQueryServerOptions') {
-    return 'PARSE_LIVE_QUERY_SERVER_';
-  }
-  if (iface.id.name === 'LiveQueryOptions') {
-    return 'PARSE_SERVER_LIVEQUERY_';
+  if (options[iface.id.name]) {
+    return options[iface.id.name]
   }
 }
 
@@ -150,6 +150,20 @@ function parseDefaultValue(elt, value, t) {
     literalValue = t.arrayExpression(array.map((value) => {
       if (typeof value == 'string') {
         return t.stringLiteral(value);
+      } else if (typeof value == 'number') {
+        return t.numericLiteral(value);
+      } else if (typeof value == 'object') {
+        const object = parsers.objectParser(value);
+        const props = Object.entries(object).map(([k, v]) => {
+          if (typeof v == 'string') {
+            return t.objectProperty(t.identifier(k), t.stringLiteral(v));
+          } else if (typeof v == 'number') {
+            return t.objectProperty(t.identifier(k), t.numericLiteral(v));
+          } else if (typeof v == 'boolean') {
+            return t.objectProperty(t.identifier(k), t.booleanLiteral(v));
+          }
+        });
+        return t.objectExpression(props);
       } else {
         throw new Error('Unable to parse array');
       }
@@ -164,6 +178,13 @@ function parseDefaultValue(elt, value, t) {
       literalValue = t.numericLiteral(parsers.numberOrBoolParser('')(value));
     }
     if (type == 'CustomPagesOptions') {
+      const object = parsers.objectParser(value);
+      const props = Object.keys(object).map((key) => {
+        return t.objectProperty(key, object[value]);
+      });
+      literalValue = t.objectExpression(props);
+    }
+    if (type == 'IdempotencyOptions') {
       const object = parsers.objectParser(value);
       const props = Object.keys(object).map((key) => {
         return t.objectProperty(key, object[value]);
@@ -217,6 +238,9 @@ function inject(t, list) {
     }
     if (type === 'NumberOrBoolean') {
       type = 'Number|Boolean';
+    }
+    if (type === 'NumberOrString') {
+      type = 'Number|String';
     }
     if (type === 'Adapter') {
       const adapterType = elt.typeAnnotation.typeParameters.params[0].id.name;

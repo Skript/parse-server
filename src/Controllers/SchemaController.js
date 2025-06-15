@@ -144,12 +144,18 @@ const defaultColumns: { [string]: SchemaFields } = Object.freeze({
     lastUsed: { type: 'Date' },
     timesUsed: { type: 'Number' },
   },
+  _Idempotency: {
+    reqId: { type: 'String' },
+    expire: { type: 'Date' },
+  },
 });
 
 const requiredColumns = Object.freeze({
   _Product: ['productIdentifier', 'icon', 'order', 'title', 'subtitle'],
   _Role: ['name', 'ACL'],
 });
+
+const invalidColumns = ['length'];
 
 const systemClasses = Object.freeze([
   '_User',
@@ -161,6 +167,7 @@ const systemClasses = Object.freeze([
   '_JobStatus',
   '_JobSchedule',
   '_Audience',
+  '_Idempotency',
 ]);
 
 const volatileClasses = Object.freeze([
@@ -171,33 +178,69 @@ const volatileClasses = Object.freeze([
   '_GraphQLConfig',
   '_JobSchedule',
   '_Audience',
+  '_Idempotency',
 ]);
 
-// 10 alpha numberic chars + uppercase
-const userIdRegex = /^[a-zA-Z0-9]{10}$/;
 // Anything that start with role
 const roleRegex = /^role:.*/;
-// Anything that starts with userField
-const pointerPermissionRegex = /^userField:.*/;
+// Anything that starts with userField (allowed for protected fields only)
+const protectedFieldsPointerRegex = /^userField:.*/;
 // * permission
 const publicRegex = /^\*$/;
 
-const requireAuthenticationRegex = /^requiresAuthentication$/;
+const authenticatedRegex = /^authenticated$/;
 
-const permissionKeyRegex = Object.freeze([
-  userIdRegex,
-  roleRegex,
-  pointerPermissionRegex,
+const requiresAuthenticationRegex = /^requiresAuthentication$/;
+
+const clpPointerRegex = /^pointerFields$/;
+
+// regex for validating entities in protectedFields object
+const protectedFieldsRegex = Object.freeze([
+  protectedFieldsPointerRegex,
   publicRegex,
-  requireAuthenticationRegex,
+  authenticatedRegex,
+  roleRegex,
 ]);
 
-function verifyPermissionKey(key) {
-  const result = permissionKeyRegex.reduce((isGood, regEx) => {
-    isGood = isGood || key.match(regEx) != null;
-    return isGood;
-  }, false);
-  if (!result) {
+// clp regex
+const clpFieldsRegex = Object.freeze([
+  clpPointerRegex,
+  publicRegex,
+  requiresAuthenticationRegex,
+  roleRegex,
+]);
+
+function validatePermissionKey(key, userIdRegExp) {
+  let matchesSome = false;
+  for (const regEx of clpFieldsRegex) {
+    if (key.match(regEx) !== null) {
+      matchesSome = true;
+      break;
+    }
+  }
+
+  // userId depends on startup options so it's dynamic
+  const valid = matchesSome || key.match(userIdRegExp) !== null;
+  if (!valid) {
+    throw new Parse.Error(
+      Parse.Error.INVALID_JSON,
+      `'${key}' is not a valid key for class level permissions`
+    );
+  }
+}
+
+function validateProtectedFieldsKey(key, userIdRegExp) {
+  let matchesSome = false;
+  for (const regEx of protectedFieldsRegex) {
+    if (key.match(regEx) !== null) {
+      matchesSome = true;
+      break;
+    }
+  }
+
+  // userId regex depends on launch options so it's dynamic
+  const valid = matchesSome || key.match(userIdRegExp) !== null;
+  if (!valid) {
     throw new Parse.Error(
       Parse.Error.INVALID_JSON,
       `'${key}' is not a valid key for class level permissions`
@@ -217,66 +260,160 @@ const CLPValidKeys = Object.freeze([
   'writeUserFields',
   'protectedFields',
 ]);
-function validateCLP(perms: ClassLevelPermissions, fields: SchemaFields) {
+
+// validation before setting class-level permissions on collection
+function validateCLP(perms: ClassLevelPermissions, fields: SchemaFields, userIdRegExp: RegExp) {
   if (!perms) {
     return;
   }
-  Object.keys(perms).forEach(operation => {
-    if (CLPValidKeys.indexOf(operation) == -1) {
+  for (const operationKey in perms) {
+    if (CLPValidKeys.indexOf(operationKey) == -1) {
       throw new Parse.Error(
         Parse.Error.INVALID_JSON,
-        `${operation} is not a valid operation for class level permissions`
+        `${operationKey} is not a valid operation for class level permissions`
       );
     }
-    if (!perms[operation]) {
-      return;
+
+    const operation = perms[operationKey];
+    // proceed with next operationKey
+
+    // throws when root fields are of wrong type
+    validateCLPjson(operation, operationKey);
+
+    if (operationKey === 'readUserFields' || operationKey === 'writeUserFields') {
+      // validate grouped pointer permissions
+      // must be an array with field names
+      for (const fieldName of operation) {
+        validatePointerPermission(fieldName, fields, operationKey);
+      }
+      // readUserFields and writerUserFields do not have nesdted fields
+      // proceed with next operationKey
+      continue;
     }
 
-    if (operation === 'readUserFields' || operation === 'writeUserFields') {
-      if (!Array.isArray(perms[operation])) {
-        // @flow-disable-next
-        throw new Parse.Error(
-          Parse.Error.INVALID_JSON,
-          `'${perms[operation]}' is not a valid value for class level permissions ${operation}`
-        );
-      } else {
-        perms[operation].forEach(key => {
-          if (
-            !(
-              fields[key] &&
-              ((fields[key].type == 'Pointer' &&
-                fields[key].targetClass == '_User') ||
-                fields[key].type == 'Array')
-            )
-          ) {
+    // validate protected fields
+    if (operationKey === 'protectedFields') {
+      for (const entity in operation) {
+        // throws on unexpected key
+        validateProtectedFieldsKey(entity, userIdRegExp);
+
+        const protectedFields = operation[entity];
+
+        if (!Array.isArray(protectedFields)) {
+          throw new Parse.Error(
+            Parse.Error.INVALID_JSON,
+            `'${protectedFields}' is not a valid value for protectedFields[${entity}] - expected an array.`
+          );
+        }
+
+        // if the field is in form of array
+        for (const field of protectedFields) {
+          // do not alloow to protect default fields
+          if (defaultColumns._Default[field]) {
             throw new Parse.Error(
               Parse.Error.INVALID_JSON,
-              `'${key}' is not a valid column for class level pointer permissions ${operation}`
+              `Default field '${field}' can not be protected`
             );
           }
-        });
+          // field should exist on collection
+          if (!Object.prototype.hasOwnProperty.call(fields, field)) {
+            throw new Parse.Error(
+              Parse.Error.INVALID_JSON,
+              `Field '${field}' in protectedFields:${entity} does not exist`
+            );
+          }
+        }
       }
-      return;
+      // proceed with next operationKey
+      continue;
     }
 
-    // @flow-disable-next
-    Object.keys(perms[operation]).forEach(key => {
-      verifyPermissionKey(key);
-      // @flow-disable-next
-      const perm = perms[operation][key];
-      if (
-        perm !== true &&
-        (operation !== 'protectedFields' || !Array.isArray(perm))
-      ) {
-        // @flow-disable-next
+    // validate other fields
+    // Entity can be:
+    // "*" - Public,
+    // "requiresAuthentication" - authenticated users,
+    // "objectId" - _User id,
+    // "role:rolename",
+    // "pointerFields" - array of field names containing pointers to users
+    for (const entity in operation) {
+      // throws on unexpected key
+      validatePermissionKey(entity, userIdRegExp);
+
+      // entity can be either:
+      // "pointerFields": string[]
+      if (entity === 'pointerFields') {
+        const pointerFields = operation[entity];
+
+        if (Array.isArray(pointerFields)) {
+          for (const pointerField of pointerFields) {
+            validatePointerPermission(pointerField, fields, operation);
+          }
+        } else {
+          throw new Parse.Error(
+            Parse.Error.INVALID_JSON,
+            `'${pointerFields}' is not a valid value for ${operationKey}[${entity}] - expected an array.`
+          );
+        }
+        // proceed with next entity key
+        continue;
+      }
+
+      // or [entity]: boolean
+      const permit = operation[entity];
+
+      if (permit !== true) {
         throw new Parse.Error(
           Parse.Error.INVALID_JSON,
-          `'${perm}' is not a valid value for class level permissions ${operation}:${key}:${perm}`
+          `'${permit}' is not a valid value for class level permissions ${operationKey}:${entity}:${permit}`
         );
       }
-    });
-  });
+    }
+  }
 }
+
+function validateCLPjson(operation: any, operationKey: string) {
+  if (operationKey === 'readUserFields' || operationKey === 'writeUserFields') {
+    if (!Array.isArray(operation)) {
+      throw new Parse.Error(
+        Parse.Error.INVALID_JSON,
+        `'${operation}' is not a valid value for class level permissions ${operationKey} - must be an array`
+      );
+    }
+  } else {
+    if (typeof operation === 'object' && operation !== null) {
+      // ok to proceed
+      return;
+    } else {
+      throw new Parse.Error(
+        Parse.Error.INVALID_JSON,
+        `'${operation}' is not a valid value for class level permissions ${operationKey} - must be an object`
+      );
+    }
+  }
+}
+
+function validatePointerPermission(fieldName: string, fields: Object, operation: string) {
+  // Uses collection schema to ensure the field is of type:
+  // - Pointer<_User> (pointers)
+  // - Array
+  //
+  //    It's not possible to enforce type on Array's items in schema
+  //  so we accept any Array field, and later when applying permissions
+  //  only items that are pointers to _User are considered.
+  if (
+    !(
+      fields[fieldName] &&
+      ((fields[fieldName].type == 'Pointer' && fields[fieldName].targetClass == '_User') ||
+        fields[fieldName].type == 'Array')
+    )
+  ) {
+    throw new Parse.Error(
+      Parse.Error.INVALID_JSON,
+      `'${fieldName}' is not a valid column for class level pointer permissions ${operation}`
+    );
+  }
+}
+
 const joinClassRegex = /^_Join:[A-Za-z0-9_]+:[A-Za-z0-9_]+/;
 const classAndFieldRegex = /^[A-Za-z][A-Za-z0-9_]*$/;
 function classNameIsValid(className: string): boolean {
@@ -287,21 +424,24 @@ function classNameIsValid(className: string): boolean {
     // Be a join table OR
     joinClassRegex.test(className) ||
     // Include only alpha-numeric and underscores, and not start with an underscore or number
-    fieldNameIsValid(className)
+    fieldNameIsValid(className, className)
   );
 }
 
 // Valid fields must be alpha-numeric, and not start with an underscore or number
-function fieldNameIsValid(fieldName: string): boolean {
-  return classAndFieldRegex.test(fieldName);
+// must not be a reserved key
+function fieldNameIsValid(fieldName: string, className: string): boolean {
+  if (className && className !== '_Hooks') {
+    if (fieldName === 'className') {
+      return false;
+    }
+  }
+  return classAndFieldRegex.test(fieldName) && !invalidColumns.includes(fieldName);
 }
 
 // Checks that it's not trying to clobber one of the default fields of the class.
-function fieldNameIsValidForClass(
-  fieldName: string,
-  className: string
-): boolean {
-  if (!fieldNameIsValid(fieldName)) {
+function fieldNameIsValidForClass(fieldName: string, className: string): boolean {
+  if (!fieldNameIsValid(fieldName, className)) {
     return false;
   }
   if (defaultColumns._Default[fieldName]) {
@@ -321,10 +461,7 @@ function invalidClassNameMessage(className: string): string {
   );
 }
 
-const invalidJsonError = new Parse.Error(
-  Parse.Error.INVALID_JSON,
-  'invalid JSON'
-);
+const invalidJsonError = new Parse.Error(Parse.Error.INVALID_JSON, 'invalid JSON');
 const validNonRelationOrPointerTypes = [
   'Number',
   'String',
@@ -345,10 +482,7 @@ const fieldTypeIsInvalid = ({ type, targetClass }) => {
     } else if (typeof targetClass !== 'string') {
       return invalidJsonError;
     } else if (!classNameIsValid(targetClass)) {
-      return new Parse.Error(
-        Parse.Error.INVALID_CLASS_NAME,
-        invalidClassNameMessage(targetClass)
-      );
+      return new Parse.Error(Parse.Error.INVALID_CLASS_NAME, invalidClassNameMessage(targetClass));
     } else {
       return undefined;
     }
@@ -357,10 +491,7 @@ const fieldTypeIsInvalid = ({ type, targetClass }) => {
     return invalidJsonError;
   }
   if (validNonRelationOrPointerTypes.indexOf(type) < 0) {
-    return new Parse.Error(
-      Parse.Error.INCORRECT_TYPE,
-      `invalid field type: ${type}`
-    );
+    return new Parse.Error(Parse.Error.INCORRECT_TYPE, `invalid field type: ${type}`);
   }
   return undefined;
 };
@@ -416,18 +547,14 @@ class SchemaData {
             data.classLevelPermissions = deepcopy(schema.classLevelPermissions);
             data.indexes = schema.indexes;
 
-            const classProtectedFields = this.__protectedFields[
-              schema.className
-            ];
+            const classProtectedFields = this.__protectedFields[schema.className];
             if (classProtectedFields) {
               for (const key in classProtectedFields) {
                 const unq = new Set([
                   ...(data.classLevelPermissions.protectedFields[key] || []),
                   ...classProtectedFields[key],
                 ]);
-                data.classLevelPermissions.protectedFields[key] = Array.from(
-                  unq
-                );
+                data.classLevelPermissions.protectedFields[key] = Array.from(unq);
               }
             }
 
@@ -461,12 +588,7 @@ class SchemaData {
   }
 }
 
-const injectDefaultSchema = ({
-  className,
-  fields,
-  classLevelPermissions,
-  indexes,
-}: Schema) => {
+const injectDefaultSchema = ({ className, fields, classLevelPermissions, indexes }: Schema) => {
   const defaultSchema: Schema = {
     className,
     fields: {
@@ -519,6 +641,13 @@ const _AudienceSchema = convertSchemaToAdapterSchema(
     classLevelPermissions: {},
   })
 );
+const _IdempotencySchema = convertSchemaToAdapterSchema(
+  injectDefaultSchema({
+    className: '_Idempotency',
+    fields: defaultColumns._Idempotency,
+    classLevelPermissions: {},
+  })
+);
 const VolatileClassesSchemas = [
   _HooksSchema,
   _JobStatusSchema,
@@ -527,12 +656,10 @@ const VolatileClassesSchemas = [
   _GlobalConfigSchema,
   _GraphQLConfigSchema,
   _AudienceSchema,
+  _IdempotencySchema,
 ];
 
-const dbTypeMatchesObjectType = (
-  dbType: SchemaField | string,
-  objectType: SchemaField
-) => {
+const dbTypeMatchesObjectType = (dbType: SchemaField | string, objectType: SchemaField) => {
   if (dbType.type !== objectType.type) return false;
   if (dbType.targetClass !== objectType.targetClass) return false;
   if (dbType === objectType.type) return true;
@@ -558,12 +685,20 @@ export default class SchemaController {
   _cache: any;
   reloadDataPromise: ?Promise<any>;
   protectedFields: any;
+  userIdRegEx: RegExp;
 
   constructor(databaseAdapter: StorageAdapter, schemaCache: any) {
     this._dbAdapter = databaseAdapter;
     this._cache = schemaCache;
     this.schemaData = new SchemaData();
     this.protectedFields = Config.get(Parse.applicationId).protectedFields;
+
+    const customIds = Config.get(Parse.applicationId).allowCustomObjectId;
+
+    const customIdRegEx = /^.{1,}$/u; // 1+ chars
+    const autoIdRegEx = /^[a-zA-Z0-9]{1,}$/;
+
+    this.userIdRegEx = customIds ? customIdRegEx : autoIdRegEx;
   }
 
   reloadData(options: LoadSchemaOptions = { clearCache: false }): Promise<any> {
@@ -586,9 +721,7 @@ export default class SchemaController {
     return this.reloadDataPromise;
   }
 
-  getAllClasses(
-    options: LoadSchemaOptions = { clearCache: false }
-  ): Promise<Array<Schema>> {
+  getAllClasses(options: LoadSchemaOptions = { clearCache: false }): Promise<Array<Schema>> {
     if (options.clearCache) {
       return this.setAllClasses();
     }
@@ -608,9 +741,7 @@ export default class SchemaController {
         /* eslint-disable no-console */
         this._cache
           .setAllClasses(allSchemas)
-          .catch(error =>
-            console.error('Error saving schema to cache:', error)
-          );
+          .catch(error => console.error('Error saving schema to cache:', error));
         /* eslint-enable no-console */
         return allSchemas;
       });
@@ -640,9 +771,7 @@ export default class SchemaController {
           return Promise.resolve(cached);
         }
         return this.setAllClasses().then(allSchemas => {
-          const oneSchema = allSchemas.find(
-            schema => schema.className === className
-          );
+          const oneSchema = allSchemas.find(schema => schema.className === className);
           if (!oneSchema) {
             return Promise.reject(undefined);
           }
@@ -665,18 +794,12 @@ export default class SchemaController {
     classLevelPermissions: any,
     indexes: any = {}
   ): Promise<void | Schema> {
-    var validationError = this.validateNewClass(
-      className,
-      fields,
-      classLevelPermissions
-    );
+    var validationError = this.validateNewClass(className, fields, classLevelPermissions);
     if (validationError) {
       if (validationError instanceof Parse.Error) {
         return Promise.reject(validationError);
       } else if (validationError.code && validationError.error) {
-        return Promise.reject(
-          new Parse.Error(validationError.code, validationError.error)
-        );
+        return Promise.reject(new Parse.Error(validationError.code, validationError.error));
       }
       return Promise.reject(validationError);
     }
@@ -720,21 +843,14 @@ export default class SchemaController {
             throw new Parse.Error(255, `Field ${name} exists, cannot update.`);
           }
           if (!existingFields[name] && field.__op === 'Delete') {
-            throw new Parse.Error(
-              255,
-              `Field ${name} does not exist, cannot delete.`
-            );
+            throw new Parse.Error(255, `Field ${name} does not exist, cannot delete.`);
           }
         });
 
         delete existingFields._rperm;
         delete existingFields._wperm;
-        const newSchema = buildMergedSchemaObject(
-          existingFields,
-          submittedFields
-        );
-        const defaultFields =
-          defaultColumns[className] || defaultColumns._Default;
+        const newSchema = buildMergedSchemaObject(existingFields, submittedFields);
+        const defaultFields = defaultColumns[className] || defaultColumns._Default;
         const fullNewSchema = Object.assign({}, newSchema, defaultFields);
         const validationError = this.validateSchemaData(
           className,
@@ -775,11 +891,7 @@ export default class SchemaController {
             })
             .then(results => {
               enforceFields = results.filter(result => !!result);
-              return this.setPermissions(
-                className,
-                classLevelPermissions,
-                newSchema
-              );
+              return this.setPermissions(className, classLevelPermissions, newSchema);
             })
             .then(() =>
               this._dbAdapter.setIndexesWithSchemaFormat(
@@ -841,32 +953,19 @@ export default class SchemaController {
           if (this.schemaData[className]) {
             return this;
           } else {
-            throw new Parse.Error(
-              Parse.Error.INVALID_JSON,
-              `Failed to add ${className}`
-            );
+            throw new Parse.Error(Parse.Error.INVALID_JSON, `Failed to add ${className}`);
           }
         })
         .catch(() => {
           // The schema still doesn't validate. Give up
-          throw new Parse.Error(
-            Parse.Error.INVALID_JSON,
-            'schema class name does not revalidate'
-          );
+          throw new Parse.Error(Parse.Error.INVALID_JSON, 'schema class name does not revalidate');
         })
     );
   }
 
-  validateNewClass(
-    className: string,
-    fields: SchemaFields = {},
-    classLevelPermissions: any
-  ): any {
+  validateNewClass(className: string, fields: SchemaFields = {}, classLevelPermissions: any): any {
     if (this.schemaData[className]) {
-      throw new Parse.Error(
-        Parse.Error.INVALID_CLASS_NAME,
-        `Class ${className} already exists.`
-      );
+      throw new Parse.Error(Parse.Error.INVALID_CLASS_NAME, `Class ${className} already exists.`);
     }
     if (!classNameIsValid(className)) {
       return {
@@ -874,12 +973,7 @@ export default class SchemaController {
         error: invalidClassNameMessage(className),
       };
     }
-    return this.validateSchemaData(
-      className,
-      fields,
-      classLevelPermissions,
-      []
-    );
+    return this.validateSchemaData(className, fields, classLevelPermissions, []);
   }
 
   validateSchemaData(
@@ -890,7 +984,7 @@ export default class SchemaController {
   ) {
     for (const fieldName in fields) {
       if (existingFieldNames.indexOf(fieldName) < 0) {
-        if (!fieldNameIsValid(fieldName)) {
+        if (!fieldNameIsValid(fieldName, className)) {
           return {
             code: Parse.Error.INVALID_KEY_NAME,
             error: 'invalid field name: ' + fieldName,
@@ -909,15 +1003,10 @@ export default class SchemaController {
           let defaultValueType = getType(fieldType.defaultValue);
           if (typeof defaultValueType === 'string') {
             defaultValueType = { type: defaultValueType };
-          } else if (
-            typeof defaultValueType === 'object' &&
-            fieldType.type === 'Relation'
-          ) {
+          } else if (typeof defaultValueType === 'object' && fieldType.type === 'Relation') {
             return {
               code: Parse.Error.INCORRECT_TYPE,
-              error: `The 'default value' option is not applicable for ${typeToString(
-                fieldType
-              )}`,
+              error: `The 'default value' option is not applicable for ${typeToString(fieldType)}`,
             };
           }
           if (!dbTypeMatchesObjectType(fieldType, defaultValueType)) {
@@ -932,9 +1021,7 @@ export default class SchemaController {
           if (typeof fieldType === 'object' && fieldType.type === 'Relation') {
             return {
               code: Parse.Error.INCORRECT_TYPE,
-              error: `The 'required' option is not applicable for ${typeToString(
-                fieldType
-              )}`,
+              error: `The 'required' option is not applicable for ${typeToString(fieldType)}`,
             };
           }
         }
@@ -959,7 +1046,7 @@ export default class SchemaController {
           ' already exists.',
       };
     }
-    validateCLP(classLevelPermissions, fields);
+    validateCLP(classLevelPermissions, fields, this.userIdRegEx);
   }
 
   // Sets the Class-level permissions for a given className, which must exist.
@@ -967,7 +1054,7 @@ export default class SchemaController {
     if (typeof perms === 'undefined') {
       return Promise.resolve();
     }
-    validateCLP(perms, newSchema);
+    validateCLP(perms, newSchema, this.userIdRegEx);
     return this._dbAdapter.setClassLevelPermissions(className, perms);
   }
 
@@ -975,21 +1062,14 @@ export default class SchemaController {
   // object if the provided className-fieldName-type tuple is valid.
   // The className must already be validated.
   // If 'freeze' is true, refuse to update the schema for this field.
-  enforceFieldExists(
-    className: string,
-    fieldName: string,
-    type: string | SchemaField
-  ) {
+  enforceFieldExists(className: string, fieldName: string, type: string | SchemaField) {
     if (fieldName.indexOf('.') > 0) {
       // subdocument key (x.y) => ok if x is of type 'object'
       fieldName = fieldName.split('.')[0];
       type = 'Object';
     }
-    if (!fieldNameIsValid(fieldName)) {
-      throw new Parse.Error(
-        Parse.Error.INVALID_KEY_NAME,
-        `Invalid field name: ${fieldName}.`
-      );
+    if (!fieldNameIsValid(fieldName, className)) {
+      throw new Parse.Error(Parse.Error.INVALID_KEY_NAME, `Invalid field name: ${fieldName}.`);
     }
 
     // If someone tries to create a new field with null/undefined as the value, return;
@@ -1059,20 +1139,13 @@ export default class SchemaController {
         type = { type: type };
       }
       if (!expectedType || !dbTypeMatchesObjectType(expectedType, type)) {
-        throw new Parse.Error(
-          Parse.Error.INVALID_JSON,
-          `Could not add field ${fieldName}`
-        );
+        throw new Parse.Error(Parse.Error.INVALID_JSON, `Could not add field ${fieldName}`);
       }
     }
   }
 
   // maintain compatibility
-  deleteField(
-    fieldName: string,
-    className: string,
-    database: DatabaseController
-  ) {
+  deleteField(fieldName: string, className: string, database: DatabaseController) {
     return this.deleteFields([fieldName], className, database);
   }
 
@@ -1083,24 +1156,14 @@ export default class SchemaController {
   // Passing the database and prefix is necessary in order to drop relation collections
   // and remove fields from objects. Ideally the database would belong to
   // a database adapter and this function would close over it or access it via member.
-  deleteFields(
-    fieldNames: Array<string>,
-    className: string,
-    database: DatabaseController
-  ) {
+  deleteFields(fieldNames: Array<string>, className: string, database: DatabaseController) {
     if (!classNameIsValid(className)) {
-      throw new Parse.Error(
-        Parse.Error.INVALID_CLASS_NAME,
-        invalidClassNameMessage(className)
-      );
+      throw new Parse.Error(Parse.Error.INVALID_CLASS_NAME, invalidClassNameMessage(className));
     }
 
     fieldNames.forEach(fieldName => {
-      if (!fieldNameIsValid(fieldName)) {
-        throw new Parse.Error(
-          Parse.Error.INVALID_KEY_NAME,
-          `invalid field name: ${fieldName}`
-        );
+      if (!fieldNameIsValid(fieldName, className)) {
+        throw new Parse.Error(Parse.Error.INVALID_KEY_NAME, `invalid field name: ${fieldName}`);
       }
       //Don't allow deleting the default fields.
       if (!fieldNameIsValidForClass(fieldName, className)) {
@@ -1122,30 +1185,23 @@ export default class SchemaController {
       .then(schema => {
         fieldNames.forEach(fieldName => {
           if (!schema.fields[fieldName]) {
-            throw new Parse.Error(
-              255,
-              `Field ${fieldName} does not exist, cannot delete.`
-            );
+            throw new Parse.Error(255, `Field ${fieldName} does not exist, cannot delete.`);
           }
         });
 
         const schemaFields = { ...schema.fields };
-        return database.adapter
-          .deleteFields(className, schema, fieldNames)
-          .then(() => {
-            return Promise.all(
-              fieldNames.map(fieldName => {
-                const field = schemaFields[fieldName];
-                if (field && field.type === 'Relation') {
-                  //For relations, drop the _Join table
-                  return database.adapter.deleteClass(
-                    `_Join:${fieldName}:${className}`
-                  );
-                }
-                return Promise.resolve();
-              })
-            );
-          });
+        return database.adapter.deleteFields(className, schema, fieldNames).then(() => {
+          return Promise.all(
+            fieldNames.map(fieldName => {
+              const field = schemaFields[fieldName];
+              if (field && field.type === 'Relation') {
+                //For relations, drop the _Join table
+                return database.adapter.deleteClass(`_Join:${fieldName}:${className}`);
+              }
+              return Promise.resolve();
+            })
+          );
+        });
       })
       .then(() => this._cache.clear());
   }
@@ -1204,7 +1260,7 @@ export default class SchemaController {
       return Promise.resolve(this);
     }
 
-    const missingColumns = columns.filter(function(column) {
+    const missingColumns = columns.filter(function (column) {
       if (query && query.objectId) {
         if (object[column] && typeof object[column] === 'object') {
           // Trying to delete a required column
@@ -1217,19 +1273,12 @@ export default class SchemaController {
     });
 
     if (missingColumns.length > 0) {
-      throw new Parse.Error(
-        Parse.Error.INCORRECT_TYPE,
-        missingColumns[0] + ' is required.'
-      );
+      throw new Parse.Error(Parse.Error.INCORRECT_TYPE, missingColumns[0] + ' is required.');
     }
     return Promise.resolve(this);
   }
 
-  testPermissionsForClassName(
-    className: string,
-    aclGroup: string[],
-    operation: string
-  ) {
+  testPermissionsForClassName(className: string, aclGroup: string[], operation: string) {
     return SchemaController.testPermissions(
       this.getClassLevelPermissions(className),
       aclGroup,
@@ -1238,11 +1287,7 @@ export default class SchemaController {
   }
 
   // Tests that the class level permission let pass the operation for a given aclGroup
-  static testPermissions(
-    classPermissions: ?any,
-    aclGroup: string[],
-    operation: string
-  ): boolean {
+  static testPermissions(classPermissions: ?any, aclGroup: string[], operation: string): boolean {
     if (!classPermissions || !classPermissions[operation]) {
       return true;
     }
@@ -1266,11 +1311,10 @@ export default class SchemaController {
     classPermissions: ?any,
     className: string,
     aclGroup: string[],
-    operation: string
+    operation: string,
+    action?: string
   ) {
-    if (
-      SchemaController.testPermissions(classPermissions, aclGroup, operation)
-    ) {
+    if (SchemaController.testPermissions(classPermissions, aclGroup, operation)) {
       return Promise.resolve();
     }
 
@@ -1301,9 +1345,7 @@ export default class SchemaController {
     // No matching CLP, let's check the Pointer permissions
     // And handle those later
     const permissionField =
-      ['get', 'find', 'count'].indexOf(operation) > -1
-        ? 'readUserFields'
-        : 'writeUserFields';
+      ['get', 'find', 'count'].indexOf(operation) > -1 ? 'readUserFields' : 'writeUserFields';
 
     // Reject create when write lockdown
     if (permissionField == 'writeUserFields' && operation == 'create') {
@@ -1320,6 +1362,16 @@ export default class SchemaController {
     ) {
       return Promise.resolve();
     }
+
+    const pointerFields = classPermissions[operation].pointerFields;
+    if (Array.isArray(pointerFields) && pointerFields.length > 0) {
+      // any op except 'addField as part of create' is ok.
+      if (operation !== 'addField' || action === 'update') {
+        // We can allow adding field on update flow only.
+        return Promise.resolve();
+      }
+    }
+
     throw new Parse.Error(
       Parse.Error.OPERATION_FORBIDDEN,
       `Permission denied for action ${operation} on class ${className}.`
@@ -1327,28 +1379,23 @@ export default class SchemaController {
   }
 
   // Validates an operation passes class-level-permissions set in the schema
-  validatePermission(className: string, aclGroup: string[], operation: string) {
+  validatePermission(className: string, aclGroup: string[], operation: string, action?: string) {
     return SchemaController.validatePermission(
       this.getClassLevelPermissions(className),
       className,
       aclGroup,
-      operation
+      operation,
+      action
     );
   }
 
   getClassLevelPermissions(className: string): any {
-    return (
-      this.schemaData[className] &&
-      this.schemaData[className].classLevelPermissions
-    );
+    return this.schemaData[className] && this.schemaData[className].classLevelPermissions;
   }
 
   // Returns the expected type for a className+key combination
   // or undefined if the schema is not set
-  getExpectedType(
-    className: string,
-    fieldName: string
-  ): ?(SchemaField | string) {
+  getExpectedType(className: string, fieldName: string): ?(SchemaField | string) {
     if (this.schemaData[className]) {
       const expectedType = this.schemaData[className].fields[fieldName];
       return expectedType === 'map' ? 'Object' : expectedType;
@@ -1380,10 +1427,7 @@ const load = (
 // does not include the default fields, as it is intended to be passed
 // to mongoSchemaFromFieldsAndClassName. No validation is done here, it
 // is done in mongoSchemaFromFieldsAndClassName.
-function buildMergedSchemaObject(
-  existingFields: SchemaFields,
-  putRequest: any
-): SchemaFields {
+function buildMergedSchemaObject(existingFields: SchemaFields, putRequest: any): SchemaFields {
   const newSchema = {};
   // @flow-disable-next
   const sysSchemaField =
@@ -1398,14 +1442,10 @@ function buildMergedSchemaObject(
       oldField !== 'createdAt' &&
       oldField !== 'objectId'
     ) {
-      if (
-        sysSchemaField.length > 0 &&
-        sysSchemaField.indexOf(oldField) !== -1
-      ) {
+      if (sysSchemaField.length > 0 && sysSchemaField.indexOf(oldField) !== -1) {
         continue;
       }
-      const fieldIsDeleted =
-        putRequest[oldField] && putRequest[oldField].__op === 'Delete';
+      const fieldIsDeleted = putRequest[oldField] && putRequest[oldField].__op === 'Delete';
       if (!fieldIsDeleted) {
         newSchema[oldField] = existingFields[oldField];
       }
@@ -1413,10 +1453,7 @@ function buildMergedSchemaObject(
   }
   for (const newField in putRequest) {
     if (newField !== 'objectId' && putRequest[newField].__op !== 'Delete') {
-      if (
-        sysSchemaField.length > 0 &&
-        sysSchemaField.indexOf(newField) !== -1
-      ) {
+      if (sysSchemaField.length > 0 && sysSchemaField.indexOf(newField) !== -1) {
         continue;
       }
       newSchema[newField] = putRequest[newField];
@@ -1512,10 +1549,7 @@ function getObjectType(obj): ?(SchemaField | string) {
         }
         break;
     }
-    throw new Parse.Error(
-      Parse.Error.INCORRECT_TYPE,
-      'This is not a valid ' + obj.__type
-    );
+    throw new Parse.Error(Parse.Error.INCORRECT_TYPE, 'This is not a valid ' + obj.__type);
   }
   if (obj['$ne']) {
     return getObjectType(obj['$ne']);

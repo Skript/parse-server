@@ -22,9 +22,7 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
       expect(config.verifyEmailSuccessURL).toEqual('myVerifyEmailSuccess');
       expect(config.choosePasswordURL).toEqual('myChoosePassword');
       expect(config.passwordResetSuccessURL).toEqual('myPasswordResetSuccess');
-      expect(config.parseFrameURL).toEqual(
-        'http://example.com/handle-parse-iframe'
-      );
+      expect(config.parseFrameURL).toEqual('http://example.com/handle-parse-iframe');
       expect(config.verifyEmailURL).toEqual(
         'https://my.public.server.com/1/apps/test/verify_email'
       );
@@ -116,7 +114,7 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
         .then(() => {
           expect(user.get('emailVerified')).toEqual(false);
           // Wait as on update email, we need to fetch the username
-          setTimeout(function() {
+          setTimeout(function () {
             expect(emailAdapter.sendVerificationEmail).toHaveBeenCalled();
             done();
           }, 200);
@@ -152,7 +150,7 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
     await user.fetch();
     expect(user.get('emailVerified')).toEqual(false);
     // Wait as on update email, we need to fetch the username
-    setTimeout(function() {
+    setTimeout(function () {
       expect(emailAdapter.sendVerificationEmail).toHaveBeenCalled();
       done();
     }, 200);
@@ -161,12 +159,10 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
   it('does send with a simple adapter', done => {
     let calls = 0;
     const emailAdapter = {
-      sendMail: function(options) {
+      sendMail: function (options) {
         expect(options.to).toBe('testSendSimpleAdapter@parse.com');
         if (calls == 0) {
-          expect(options.subject).toEqual(
-            'Please verify your e-mail for My Cool App'
-          );
+          expect(options.subject).toEqual('Please verify your e-mail for My Cool App');
           expect(options.text.match(/verify_email/)).not.toBe(null);
         } else if (calls == 1) {
           expect(options.subject).toEqual('Password Reset for My Cool App');
@@ -194,9 +190,7 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
           return user.save();
         })
         .then(() => {
-          return Parse.User.requestPasswordReset(
-            'testSendSimpleAdapter@parse.com'
-          ).catch(() => {
+          return Parse.User.requestPasswordReset('testSendSimpleAdapter@parse.com').catch(() => {
             fail('Should not fail requesting a password');
             done();
           });
@@ -368,9 +362,7 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
         user.set('email', 'testInvalidConfig@parse.com');
         user
           .signUp(null)
-          .then(() =>
-            Parse.User.requestPasswordReset('testInvalidConfig@parse.com')
-          )
+          .then(() => Parse.User.requestPasswordReset('testInvalidConfig@parse.com'))
           .then(
             () => {
               fail('sending password reset email should not have succeeded');
@@ -406,9 +398,7 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
         user.set('email', 'testInvalidConfig@parse.com');
         user
           .signUp(null)
-          .then(() =>
-            Parse.User.requestPasswordReset('testInvalidConfig@parse.com')
-          )
+          .then(() => Parse.User.requestPasswordReset('testInvalidConfig@parse.com'))
           .then(
             () => {
               fail('sending password reset email should not have succeeded');
@@ -441,9 +431,7 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
         user.set('email', 'testInvalidConfig@parse.com');
         user
           .signUp(null)
-          .then(() =>
-            Parse.User.requestPasswordReset('testInvalidConfig@parse.com')
-          )
+          .then(() => Parse.User.requestPasswordReset('testInvalidConfig@parse.com'))
           .then(
             () => {
               fail('sending password reset email should not have succeeded');
@@ -463,7 +451,7 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
       });
   });
 
-  it('succeeds sending a password reset email if appName, publicServerURL, and email adapter are prodvided', done => {
+  it('succeeds sending a password reset email if appName, publicServerURL, and email adapter are provided', done => {
     reconfigureServer({
       appName: 'coolapp',
       publicServerURL: 'http://localhost:1337/1',
@@ -480,9 +468,7 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
         user.set('email', 'testInvalidConfig@parse.com');
         user
           .signUp(null)
-          .then(() =>
-            Parse.User.requestPasswordReset('testInvalidConfig@parse.com')
-          )
+          .then(() => Parse.User.requestPasswordReset('testInvalidConfig@parse.com'))
           .then(
             () => {
               done();
@@ -503,7 +489,7 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
       fromAddress: 'parse@example.com',
       apiKey: 'k',
       domain: 'd',
-      sendMail: function(options) {
+      sendMail: function (options) {
         expect(options.to).toEqual('testValidConfig@parse.com');
         return Promise.resolve();
       },
@@ -524,9 +510,7 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
         user.setUsername('testValidConfig@parse.com');
         user
           .signUp(null)
-          .then(() =>
-            Parse.User.requestPasswordReset('testValidConfig@parse.com')
-          )
+          .then(() => Parse.User.requestPasswordReset('testValidConfig@parse.com'))
           .then(
             () => {
               expect(adapter.sendMail).toHaveBeenCalled();
@@ -683,8 +667,7 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
       publicServerURL: 'http://localhost:8378/1',
     }).then(() => {
       request({
-        url:
-          'http://localhost:8378/1/apps/test/verify_email?token=asdfasdf&username=sadfasga',
+        url: 'http://localhost:8378/1/apps/test/verify_email?token=asdfasdf&username=sadfasga',
         followRedirects: false,
       }).then(response => {
         expect(response.status).toEqual(302);
@@ -729,8 +712,7 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
     const emailAdapter = {
       sendVerificationEmail: () => {
         request({
-          url:
-            'http://localhost:8378/1/apps/test/verify_email?token=invalid&username=zxcv',
+          url: 'http://localhost:8378/1/apps/test/verify_email?token=invalid&username=zxcv',
           followRedirects: false,
         }).then(response => {
           expect(response.status).toEqual(302);
@@ -757,7 +739,7 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
       user.set('email', 'user@parse.com');
       user.signUp(null, {
         success: () => {},
-        error: function() {
+        error: function () {
           fail('Failed to save user');
           done();
         },
@@ -862,15 +844,10 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
             );
 
             Parse.User.logIn('zxcv', 'hello').then(
-              function() {
+              function () {
                 const config = Config.get('test');
                 config.database.adapter
-                  .find(
-                    '_User',
-                    { fields: {} },
-                    { username: 'zxcv' },
-                    { limit: 1 }
-                  )
+                  .find('_User', { fields: {} }, { username: 'zxcv' }, { limit: 1 })
                   .then(results => {
                     // _perishable_token should be unset after reset password
                     expect(results.length).toEqual(1);
@@ -897,6 +874,65 @@ describe('Custom Pages, Email Verification, Password Reset', () => {
     }).then(() => {
       user.setPassword('asdf');
       user.setUsername('zxcv');
+      user.set('email', 'user@parse.com');
+      user.signUp().then(() => {
+        Parse.User.requestPasswordReset('user@parse.com', {
+          error: err => {
+            jfail(err);
+            fail('Should not fail');
+            done();
+          },
+        });
+      });
+    });
+  });
+
+  it('should redirect with username encoded on success page', done => {
+    const user = new Parse.User();
+    const emailAdapter = {
+      sendVerificationEmail: () => Promise.resolve(),
+      sendPasswordResetEmail: options => {
+        request({
+          url: options.link,
+          followRedirects: false,
+        }).then(response => {
+          expect(response.status).toEqual(302);
+          const re = /http:\/\/localhost:8378\/1\/apps\/choose_password\?token=([a-zA-Z0-9]+)\&id=test\&username=zxcv%2B1/;
+          const match = response.text.match(re);
+          if (!match) {
+            fail('should have a token');
+            done();
+            return;
+          }
+          const token = match[1];
+
+          request({
+            url: 'http://localhost:8378/1/apps/test/request_password_reset',
+            method: 'POST',
+            body: { new_password: 'hello', token, username: 'zxcv+1' },
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            followRedirects: false,
+          }).then(response => {
+            expect(response.status).toEqual(302);
+            expect(response.text).toEqual(
+              'Found. Redirecting to http://localhost:8378/1/apps/password_reset_success.html?username=zxcv%2B1'
+            );
+            done();
+          });
+        });
+      },
+      sendMail: () => {},
+    };
+    reconfigureServer({
+      appName: 'emailing app',
+      verifyUserEmails: true,
+      emailAdapter: emailAdapter,
+      publicServerURL: 'http://localhost:8378/1',
+    }).then(() => {
+      user.setPassword('asdf');
+      user.setUsername('zxcv+1');
       user.set('email', 'user@parse.com');
       user.signUp().then(() => {
         Parse.User.requestPasswordReset('user@parse.com', {

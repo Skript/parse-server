@@ -11,7 +11,9 @@ const views = path.resolve(__dirname, '../../views');
 
 export class PublicAPIRouter extends PromiseRouter {
   verifyEmail(req) {
-    const { token, username } = req.query;
+    const { username, token: rawToken } = req.query;
+    const token = rawToken && typeof rawToken !== 'string' ? rawToken.toString() : rawToken;
+
     const appId = req.params.appId;
     const config = Config.get(appId);
 
@@ -92,22 +94,15 @@ export class PublicAPIRouter extends PromiseRouter {
         });
       }
       // Should we keep the file in memory or leave like that?
-      fs.readFile(
-        path.resolve(views, 'choose_password'),
-        'utf-8',
-        (err, data) => {
-          if (err) {
-            return reject(err);
-          }
-          data = data.replace(
-            'PARSE_SERVER_URL',
-            `'${config.publicServerURL}'`
-          );
-          resolve({
-            text: data,
-          });
+      fs.readFile(path.resolve(views, 'choose_password'), 'utf-8', (err, data) => {
+        if (err) {
+          return reject(err);
         }
-      );
+        data = data.replace('PARSE_SERVER_URL', `'${config.publicServerURL}'`);
+        resolve({
+          text: data,
+        });
+      });
     });
   }
 
@@ -122,7 +117,8 @@ export class PublicAPIRouter extends PromiseRouter {
       return this.missingPublicServerURL();
     }
 
-    const { username, token } = req.query;
+    const { username, token: rawToken } = req.query;
+    const token = rawToken && typeof rawToken !== 'string' ? rawToken.toString() : rawToken;
 
     if (!username || !token) {
       return this.invalidLink(req);
@@ -158,7 +154,8 @@ export class PublicAPIRouter extends PromiseRouter {
       return this.missingPublicServerURL();
     }
 
-    const { username, token, new_password } = req.body;
+    const { username, new_password, token: rawToken } = req.body;
+    const token = rawToken && typeof rawToken !== 'string' ? rawToken.toString() : rawToken;
 
     if ((!username || !token || !new_password) && req.xhr === false) {
       return this.invalidLink(req);
@@ -212,13 +209,14 @@ export class PublicAPIRouter extends PromiseRouter {
           }
         }
 
+        const encodedUsername = encodeURIComponent(username);
+        const location = result.success
+          ? `${config.passwordResetSuccessURL}?username=${encodedUsername}`
+          : `${config.choosePasswordURL}?${params}`;
+
         return Promise.resolve({
           status: 302,
-          location: `${
-            result.success
-              ? `${config.passwordResetSuccessURL}?username=${username}`
-              : `${config.choosePasswordURL}?${params}`
-          }`,
+          location,
         });
       });
   }

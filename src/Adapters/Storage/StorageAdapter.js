@@ -14,6 +14,11 @@ export type QueryOptions = {
   distinct?: boolean,
   pipeline?: any,
   readPreference?: ?string,
+  hint?: ?mixed,
+  explain?: Boolean,
+  caseInsensitive?: boolean,
+  action?: string,
+  addsField?: boolean,
 };
 
 export type UpdateQueryOptions = {
@@ -29,18 +34,10 @@ export interface StorageAdapter {
   classExists(className: string): Promise<boolean>;
   setClassLevelPermissions(className: string, clps: any): Promise<void>;
   createClass(className: string, schema: SchemaType): Promise<void>;
-  addFieldIfNotExists(
-    className: string,
-    fieldName: string,
-    type: any
-  ): Promise<void>;
+  addFieldIfNotExists(className: string, fieldName: string, type: any): Promise<void>;
   deleteClass(className: string): Promise<void>;
   deleteAllClasses(fast: boolean): Promise<void>;
-  deleteFields(
-    className: string,
-    schema: SchemaType,
-    fieldNames: Array<string>
-  ): Promise<void>;
+  deleteFields(className: string, schema: SchemaType, fieldNames: Array<string>): Promise<void>;
   getAllClasses(): Promise<StorageClass[]>;
   getClass(className: string): Promise<StorageClass>;
   createObject(
@@ -82,17 +79,22 @@ export interface StorageAdapter {
     query: QueryType,
     options: QueryOptions
   ): Promise<[any]>;
-  ensureUniqueness(
+  ensureIndex(
     className: string,
     schema: SchemaType,
-    fieldNames: Array<string>
-  ): Promise<void>;
+    fieldNames: string[],
+    indexName?: string,
+    caseSensitive?: boolean,
+    options?: Object
+  ): Promise<any>;
+  ensureUniqueness(className: string, schema: SchemaType, fieldNames: Array<string>): Promise<void>;
   count(
     className: string,
     schema: SchemaType,
     query: QueryType,
     readPreference?: string,
-    estimate?: boolean
+    estimate?: boolean,
+    hint?: mixed
   ): Promise<number>;
   distinct(
     className: string,
@@ -104,7 +106,9 @@ export interface StorageAdapter {
     className: string,
     schema: any,
     pipeline: any,
-    readPreference: ?string
+    readPreference: ?string,
+    hint: ?mixed,
+    explain?: boolean
   ): Promise<any>;
   performInitialization(options: ?any): Promise<void>;
 
