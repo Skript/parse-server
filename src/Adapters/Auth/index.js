@@ -25,6 +25,7 @@ const microsoft = require('./microsoft');
 const keycloak = require('./keycloak');
 const ldap = require('./ldap');
 const yandex = require('./yandex');
+const email = require('./email');
 
 const anonymous = {
   validateAuthData: () => {
@@ -81,6 +82,7 @@ const providers = {
   idfa,
   gaid,
   yandex,
+  email,
 };
 
 function authDataValidator(adapter, appIds, options) {
