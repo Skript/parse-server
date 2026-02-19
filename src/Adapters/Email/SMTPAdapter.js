@@ -6,8 +6,6 @@
  * @module Adapters/Email/SMTPAdapter
  */
 
-const Parse = require('parse/node');
-
 const nodemailer = require('nodemailer');
 
 export class SMTPAdapter {
@@ -27,10 +25,8 @@ export class SMTPAdapter {
     this.from = options.from;
   }
 
-  async sendMail({ to, subject, text, html }) {
-    const config = await Parse.Config.get({ useMasterKey: true });
-
-    const fromAddress = config.get('otpEmailFrom') || this.from;
+  async sendMail({ to, subject, text, html, from }) {
+    const fromAddress = from || this.from;
 
     const mailOptions = {
       from: fromAddress,
