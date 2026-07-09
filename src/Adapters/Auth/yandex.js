@@ -1,109 +1,72 @@
 // src/Adapters/Auth/yandex.js
 
-// https://yandex.ru/dev/id/doc/ru/user-information
+/**
+ * @file Кастомный auth-адаптер для аутентификации пользователя через Яндекс ID
+ * @module Adapters/Auth/yandex
+ */
+
+const Parse = require('parse/node');
+
+const { logger } = require('../../Services');
 
 const httpsRequest = require('./httpsRequest');
-const Parse = require('parse/node').Parse;
 
-const log = (options, ...args) => {
-  if (options && options.debug) {
-    console.log('[YandexAuth]', ...args);
-  }
-};
+const LOG_PREFIX = '[YandexAuth]';
 
 const validateAuthData = async (authData, options = {}) => {
-  log(options, 'Validation start, [authData]:', authData, ' [options]:', options);
+  logger.debug(`${LOG_PREFIX} Validation started for user ID: ${authData.id}`);
 
   if (!authData || !authData.access_token) {
-    log(options, 'ERROR: access_token is missing');
-    throw new Parse.Error(
-      Parse.Error.INVALID_PARAMETER,
-      '[YandexAuth] ERROR: access_token is missing'
-    );
+    logger.warn(`${LOG_PREFIX} Validation failed: access_token is missing`);
+    throw new Parse.Error(Parse.Error.UNAUTHORIZED, 'access_token is missing');
   }
-
   if (!options.clientId) {
-    log(options, 'ERROR: client ID is not configured');
-    throw new Parse.Error(
-      Parse.Error.INTERNAL_SERVER_ERROR,
-      '[YandexAuth] ERROR: client ID is not configured'
-    );
+    logger.error(`${LOG_PREFIX} FATAL: Yandex clientId is not configured in Parse Server options`);
+    throw new Parse.Error(Parse.Error.INTERNAL_SERVER_ERROR, 'Yandex clientId is not configured');
   }
-
-  const expectedClientId = options.clientId;
 
   try {
-    log(options, 'Requesting user info: ', authData.access_token);
-
     const requestOptions = {
       host: 'login.yandex.ru',
       path: '/info?format=json',
       method: 'GET',
-      headers: {
-        Authorization: `OAuth ${authData.access_token}`,
-        Accept: 'application/json',
-      },
+      headers: { Authorization: `OAuth ${authData.access_token}` },
     };
 
-    const response = await httpsRequest.get(requestOptions);
-    log(options, 'Response from Yandex:', response);
+    logger.debug(`${LOG_PREFIX} Requesting user info from Yandex...`);
+    const yandexResponse = await httpsRequest.get(requestOptions);
+    logger.debug(`${LOG_PREFIX} Received response from Yandex: ${JSON.stringify(yandexResponse)}`);
 
-    if (!response || typeof response !== 'object' || !response.id) {
-      log(options, 'ERROR: invalid or empty user info structure or missing user ID: ', response);
-      throw new Parse.Error(
-        Parse.Error.OBJECT_NOT_FOUND,
-        '[YandexAuth] ERROR: invalid or empty user info structure or missing user ID'
+    if (!yandexResponse || !yandexResponse.id) {
+      logger.warn(`${LOG_PREFIX} Validation failed: Invalid response from Yandex`);
+      throw new Parse.Error(Parse.Error.UNAUTHORIZED, 'Invalid response from Yandex');
+    }
+
+    if (yandexResponse.client_id && yandexResponse.client_id !== options.clientId) {
+      logger.warn(
+        `${LOG_PREFIX} Validation failed: Client ID mismatch. Expected ${options.clientId}, got ${yandexResponse.client_id}`
       );
+      throw new Parse.Error(Parse.Error.UNAUTHORIZED, 'Client ID mismatch');
     }
 
-    if (!response.id) {
-      log(options, 'ERROR: no user ID');
-      throw new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, '[YandexAuth] ERROR: no user ID');
+    if (authData.id && authData.id !== yandexResponse.id.toString()) {
+      logger.warn(
+        `${LOG_PREFIX} Validation failed: User ID mismatch. Client sent ${authData.id}, Yandex returned ${yandexResponse.id}`
+      );
+      throw new Parse.Error(Parse.Error.UNAUTHORIZED, 'User ID mismatch');
     }
 
-    if (response.client_id && response.client_id !== expectedClientId) {
-      log(options, 'ERROR: client ID mismatch');
-      throw new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, '[YandexAuth] ERROR: client ID mismatch');
-    }
+    logger.debug(`${LOG_PREFIX} User ${yandexResponse.id} successfully validated`);
 
-    if (authData.id && authData.id !== response.id.toString()) {
-      log(options, 'ERROR: user ID mismatch');
-      throw new Parse.Error(Parse.Error.OBJECT_NOT_FOUND, '[YandexAuth] ERROR: user ID mismatch');
-    }
-
-    const result = {
-      id: response.id.toString(),
-      access_token: authData.access_token,
-    };
-
-    log(options, 'SUCCESS: ', authData.access_token);
-
-    return result;
+    return;
   } catch (error) {
-    log(options, 'ERROR: ', error);
+    logger.error(`${LOG_PREFIX} Authentication failed unexpectedly`, error);
 
     if (error instanceof Parse.Error) {
       throw error;
     }
 
-    if (error instanceof SyntaxError) {
-      throw new Parse.Error(
-        Parse.Error.OBJECT_NOT_FOUND,
-        '[YandexAuth] ERROR: invalid response format'
-      );
-    }
-
-    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-      throw new Parse.Error(
-        Parse.Error.CONNECTION_FAILED,
-        `[YandexAuth] ERROR: could not connect to Yandex API: ${error.code}`
-      );
-    }
-
-    throw new Parse.Error(
-      Parse.Error.INTERNAL_SERVER_ERROR,
-      `[YandexAuth] ERROR: authentication failed: ${error.message || 'unknown error'}`
-    );
+    throw new Parse.Error(Parse.Error.INTERNAL_SERVER_ERROR, 'Authentication failed unexpectedly');
   }
 };
 
