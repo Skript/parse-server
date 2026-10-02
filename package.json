@@ -52,7 +52,6 @@
     "mongodb": "3.6.11",
     "mongoose": "^5.13.7",
     "nodemailer": "7.0.5",
-    "onesignal-node": "2.0.1",
     "parse": "3.3.0",
     "pg-promise": "10.8.1",
     "pluralize": "8.0.0",
