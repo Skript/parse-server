@@ -161,4 +161,58 @@ describe('LoggerController', () => {
     expect(adapter.log).toHaveBeenCalled();
     done();
   });
+
+  describe('masking sensitive data', () => {
+    const logWith = (...args) => {
+      const adapter = new WinstonLoggerAdapter();
+      const logger = new LoggerController(adapter, null, {});
+      spyOn(adapter, 'log');
+      logger.info(...args);
+      return adapter.log.calls.mostRecent().args;
+    };
+
+    it('masks nested password in params without mutating them (signIn)', () => {
+      const params = { authData: { id: 'a@b.c', provider: 'password', password: 'secret' } };
+      const [, , meta] = logWith('Ran cloud function signIn', { functionName: 'signIn', params });
+      expect(meta.params.authData).toEqual({
+        id: 'a@b.c',
+        provider: 'password',
+        password: '********',
+      });
+      expect(params.authData.password).toEqual('secret');
+    });
+
+    it('masks password and sessionToken keys at any depth in body and result', () => {
+      const [, , meta] = logWith('msg', {
+        body: { user: { oldPassword: 'x', newPassword: 'y' }, list: [{ password: 'z' }] },
+        result: { sessionToken: 'r:token', username: 'u' },
+      });
+      expect(meta.body).toEqual({
+        user: { oldPassword: '********', newPassword: '********' },
+        list: [{ password: '********' }],
+      });
+      expect(meta.result).toEqual({ sessionToken: '********', username: 'u' });
+    });
+
+    it('masks password and sessionToken in strings, including escaped quotes and truncation', () => {
+      const [, message] = logWith(
+        'Input: {"authData":{"provider":"password","password":"se\\"cr\\\\et"}}\n' +
+          '  Result: {"username":"u","sessionToken":"r:abc"} {"sessionToken": "r:cut... (truncated)'
+      );
+      expect(message).toEqual(
+        'Input: {"authData":{"provider":"password","password":"********"}}\n' +
+          '  Result: {"username":"u","sessionToken":"********"} {"sessionToken": "********"'
+      );
+    });
+
+    it('masks the output of lazy messages', () => {
+      const body = { username: 'test', password: 'simplepass.com' };
+      const [, message, meta] = logWith(() => `REQUEST: ${JSON.stringify(body, null, 2)}`, {
+        body,
+      });
+      expect(message).toEqual('REQUEST: {\n  "username": "test",\n  "password": "********"\n}');
+      expect(meta.body.password).toEqual('********');
+      expect(body.password).toEqual('simplepass.com');
+    });
+  });
 });

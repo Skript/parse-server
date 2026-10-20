@@ -19,6 +19,40 @@ export const LogOrder = {
 
 const logLevels = ['error', 'warn', 'info', 'debug', 'verbose', 'silly'];
 
+const MASK = '********';
+const MAX_MASK_DEPTH = 20;
+// Ключи, значения которых нельзя писать в лог (password, oldPassword, sessionToken, ...)
+const SENSITIVE_KEY_REGEX = /(?:password|sessiontoken)$/i;
+// То же в JSON-строке: экранированные символы (\") не обрывают значение, а закрывающая
+// кавычка необязательна — значение могло быть обрезано truncateLogMessage
+const SENSITIVE_STRING_REGEX = /((?:password|sessiontoken)"\s*:\s*")(?:[^"\\]|\\.)*"?/gi;
+
+export function maskSensitiveString(string) {
+  return string.replace(SENSITIVE_STRING_REGEX, `$1${MASK}"`);
+}
+
+// Возвращает копию с замаскированными значениями чувствительных ключей на любой глубине
+export function maskSensitiveObject(value, depth = 0) {
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  if (depth > MAX_MASK_DEPTH) {
+    return MASK;
+  }
+  if (typeof value.toJSON === 'function') {
+    // Parse.Object, Date и т.п. — маскируем то, что реально попадёт в JSON
+    return maskSensitiveObject(value.toJSON(), depth + 1);
+  }
+  if (Array.isArray(value)) {
+    return value.map(item => maskSensitiveObject(item, depth + 1));
+  }
+  const masked = {};
+  for (const key of Object.keys(value)) {
+    masked[key] = SENSITIVE_KEY_REGEX.test(key) ? MASK : maskSensitiveObject(value[key], depth + 1);
+  }
+  return masked;
+}
+
 export class LoggerController extends AdaptableController {
   constructor(adapter, appId, options = { logLevel: 'info' }) {
     super(adapter, appId, options);
@@ -67,7 +101,7 @@ export class LoggerController extends AdaptableController {
       }
 
       if (typeof e === 'string') {
-        return e.replace(/(password".?:.?")[^"]*"/g, '$1********"');
+        return maskSensitiveString(e);
       }
       // else it is an object...
 
@@ -88,21 +122,12 @@ export class LoggerController extends AdaptableController {
         }
       }
 
-      if (e.body) {
-        for (const key of Object.keys(e.body)) {
-          if (key === 'password') {
-            e.body[key] = '********';
-            break;
-          }
-        }
-      }
-
-      if (e.params) {
-        for (const key of Object.keys(e.params)) {
-          if (key === 'password') {
-            e.params[key] = '********';
-            break;
-          }
+      // body/params/result — ссылки на живые объекты запроса и ответа, поэтому
+      // маскируем копию, а не мутируем оригинал; секреты бывают вложенными
+      // (например, signIn: params.authData.password)
+      for (const key of ['body', 'params', 'result']) {
+        if (e[key] && typeof e[key] === 'object') {
+          e = Object.assign({}, e, { [key]: maskSensitiveObject(e[key]) });
         }
       }
 
@@ -111,17 +136,10 @@ export class LoggerController extends AdaptableController {
   }
 
   log(level, args) {
-    // make the passed in arguments object an array with the spread operator
-    args = this.maskSensitive([...args]);
-    args = [].concat(
-      level,
-      args.map(arg => {
-        if (typeof arg === 'function') {
-          return arg();
-        }
-        return arg;
-      })
-    );
+    // make the passed in arguments object an array with the spread operator;
+    // lazy messages are resolved before masking so their strings get masked too
+    args = [...args].map(arg => (typeof arg === 'function' ? arg() : arg));
+    args = [].concat(level, this.maskSensitive(args));
     this.adapter.log.apply(this.adapter, args);
   }
 
