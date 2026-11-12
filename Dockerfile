@@ -1,7 +1,7 @@
 ############################################################
 # Build stage
 ############################################################
-FROM node:18-alpine as build
+FROM node:26-alpine as build
 
 RUN apk update && apk add --no-cache git
 
@@ -28,7 +28,7 @@ RUN npm run build
 ############################################################
 # Release stage
 ############################################################
-FROM node:18-alpine as release
+FROM node:26-alpine as release
 
 RUN apk update && apk add --no-cache git
 
