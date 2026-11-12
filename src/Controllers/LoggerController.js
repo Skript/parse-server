@@ -1,7 +1,7 @@
 import { Parse } from 'parse/node';
 import AdaptableController from './AdaptableController';
 import { LoggerAdapter } from '../Adapters/Logger/LoggerAdapter';
-import url from 'url';
+import querystring from 'querystring';
 
 const MILLISECONDS_IN_A_DAY = 24 * 60 * 60 * 1000;
 const LOG_STRING_TRUNCATE_LENGTH = 1000;
@@ -73,8 +73,8 @@ export class LoggerController extends AdaptableController {
   }
 
   maskSensitiveUrl(urlString) {
-    const urlObj = url.parse(urlString, true);
-    const query = urlObj.query;
+    const urlObj = new URL(urlString, 'http://localhost');
+    const query = querystring.parse(urlObj.search.slice(1));
     let sanitizedQuery = '?';
 
     for (const key in query) {

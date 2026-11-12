@@ -2,7 +2,6 @@ import HTTPResponse from './HTTPResponse';
 import querystring from 'querystring';
 import log from '../logger';
 import { http, https } from 'follow-redirects';
-import { parse } from 'url';
 
 const clients = {
   'http:': http,
@@ -88,7 +87,7 @@ const encodeBody = function ({ body, headers = {} }) {
 module.exports = function httpRequest(options) {
   let url;
   try {
-    url = parse(options.url);
+    url = new URL(options.url);
   } catch (e) {
     return Promise.reject(e);
   }
@@ -107,7 +106,7 @@ module.exports = function httpRequest(options) {
     method: options.method,
     port: Number(url.port),
     path: url.pathname,
-    hostname: url.hostname,
+    hostname: url.hostname.replace(/^\[|\]$/g, ''),
     headers: options.headers,
     encoding: null,
     followRedirects: options.followRedirects === true,
@@ -120,10 +119,12 @@ module.exports = function httpRequest(options) {
     });
   }
   if (url.search) {
-    options.qs = Object.assign({}, options.qs, querystring.parse(url.query));
+    options.qs = Object.assign({}, options.qs, querystring.parse(url.search.slice(1)));
   }
-  if (url.auth) {
-    requestOptions.auth = url.auth;
+  if (url.username || url.password) {
+    requestOptions.auth =
+      decodeURIComponent(url.username) +
+      (url.password ? ':' + decodeURIComponent(url.password) : '');
   }
   if (options.qs) {
     requestOptions.path += `?${querystring.stringify(options.qs)}`;

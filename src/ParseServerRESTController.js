@@ -1,7 +1,6 @@
 const Config = require('./Config');
 const Auth = require('./Auth');
 const RESTController = require('parse/lib/node/RESTController');
-const URL = require('url');
 const Parse = require('parse/node');
 
 function getSessionToken(options) {
@@ -38,9 +37,9 @@ function ParseServerRESTController(applicationId, router) {
     if (!config) {
       config = Config.get(applicationId);
     }
-    const serverURL = URL.parse(config.serverURL);
-    if (path.indexOf(serverURL.path) === 0) {
-      path = path.slice(serverURL.path.length, path.length);
+    const serverPath = new URL(config.serverURL).pathname;
+    if (path.indexOf(serverPath) === 0) {
+      path = path.slice(serverPath.length, path.length);
     }
 
     if (path[0] !== '/') {
